@@ -175,15 +175,8 @@ fn run_repair(apply: bool) -> i32 {
 /// Moves the old data folder to the renamed one (ADR-0012 D6) when the server is about to use
 /// its default database, and points the database there. A path given by flag or variable is the
 /// user's to keep, so nothing moves then.
-fn adopt_data_dir(cli: Cli) -> Cli {
-    let uses_default = match &cli {
-        Cli::Serve(cfg) => cfg.db_path == config::default_db_path(),
-        Cli::RepairProjects { .. } => {
-            std::env::var_os(config::DB_PATH_ENV.0).is_none()
-                && std::env::var_os(config::DB_PATH_ENV.1).is_none()
-        }
-        _ => false,
-    };
+fn adopt_data_dir(cli: Cli, explicit_db: bool) -> Cli {
+    let uses_default = !explicit_db && matches!(cli, Cli::Serve(_) | Cli::RepairProjects { .. });
     if !uses_default {
         return cli;
     }
@@ -238,14 +231,16 @@ async fn run_server(cfg: config::ServeConfig) -> i32 {
 }
 
 async fn run() -> i32 {
-    let cli = match parse_args(std::env::args().skip(1).collect()) {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    let explicit_db = config::db_path_given(&argv);
+    let cli = match parse_args(argv) {
         Ok(cli) => cli,
         Err(message) => {
             eprintln!("[ERROR] {message}\n\n{}", config::help());
             return 1;
         }
     };
-    let cli = adopt_data_dir(cli);
+    let cli = adopt_data_dir(cli, explicit_db);
     match cli {
         Cli::Version => {
             println!("{} v{VERSION}", assistant_memory::brand::SERVER_NAME);

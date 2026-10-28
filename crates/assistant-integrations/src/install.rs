@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::catalog::Client;
 use crate::config::{
     DISPLAY_NAME, IntegrationError, JsonChange, JsonStatus, Keys, LEGACY_SERVER_KEY, Result,
-    SERVER_KEY, json_keys, json_status, merge_json, remove_json,
+    SERVER_KEY, is_old_setup_entry, json_keys, json_legacy_entry, json_status, merge_json,
+    remove_json,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,26 +66,95 @@ fn json_client(client: Client) -> bool {
 
 /// The server's keys in Codex's TOML config, under the current name or the old one.
 fn codex_keys(path: &Path) -> Result<Keys> {
-    if !path.exists() {
-        return Ok(Keys {
-            current: false,
-            legacy: false,
-        });
-    }
-    let content = fs::read_to_string(path).map_err(|source| IntegrationError::Filesystem {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let content = read_codex(path)?;
     let has = |key: &str| {
-        content.lines().any(|line| {
-            let line = line.trim();
-            line == format!("[mcp_servers.{key}]") || line == format!("[mcp_servers.\"{key}\"]")
-        })
+        let table = format!("mcp_servers.{key}");
+        content
+            .lines()
+            .any(|line| toml_table(line).is_some_and(|name| name == table))
     };
     Ok(Keys {
         current: has(SERVER_KEY),
         legacy: has(LEGACY_SERVER_KEY),
     })
+}
+
+fn read_codex(path: &Path) -> Result<String> {
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    fs::read_to_string(path).map_err(|source| IntegrationError::Filesystem {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// A TOML table header's dotted name, unquoted and without spacing or a trailing comment:
+/// `[ mcp_servers."advisaur-mcp" ] # memory` is `mcp_servers.advisaur-mcp`.
+fn toml_table(line: &str) -> Option<String> {
+    let line = line.trim();
+    if !line.starts_with('[') || line.starts_with("[[") {
+        return None;
+    }
+    let close = line.find(']')?;
+    let rest = line[close + 1..].trim();
+    if !(rest.is_empty() || rest.starts_with('#')) {
+        return None;
+    }
+    let parts: Vec<String> = line[1..close]
+        .split('.')
+        .map(|part| {
+            part.trim()
+                .trim_matches(|c| c == '"' || c == '\'')
+                .to_string()
+        })
+        .collect();
+    Some(parts.join("."))
+}
+
+/// The table Codex holds under the old key, as a JSON entry: its command and args, plus any
+/// other key or sub-table, which makes it the user's.
+fn codex_legacy_entry(path: &Path) -> Result<Option<serde_json::Value>> {
+    let content = read_codex(path)?;
+    let table = format!("mcp_servers.{LEGACY_SERVER_KEY}");
+    let mut lines = content
+        .lines()
+        .skip_while(|line| toml_table(line).as_deref() != Some(&table));
+    if lines.next().is_none() {
+        return Ok(None);
+    }
+    let mut entry = serde_json::Map::new();
+    for line in lines {
+        let line = line.trim();
+        if let Some(name) = toml_table(line) {
+            if name.starts_with(&format!("{table}.")) {
+                entry.insert("table".into(), json!(name));
+                continue;
+            }
+            break;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            entry.insert("unparsed".into(), json!(line));
+            continue;
+        };
+        // Double-quoted strings and arrays of them read as JSON; anything else stays opaque.
+        let value =
+            serde_json::from_str(value.trim()).unwrap_or_else(|_| json!({ "toml": value.trim() }));
+        entry.insert(key.trim().to_string(), value);
+    }
+    Ok(Some(serde_json::Value::Object(entry)))
+}
+
+/// The entry under the old key, for clients set up through their CLI.
+fn legacy_entry(client: Client, path: &Path) -> Result<Option<serde_json::Value>> {
+    if json_client(client) {
+        json_legacy_entry(path)
+    } else {
+        codex_legacy_entry(path)
+    }
 }
 
 /// The server's keys in a client's config, or what the user must fix first.
@@ -137,11 +207,6 @@ fn portable_entry_for(is_windows: bool, package: &str) -> serde_json::Value {
 
 fn portable_entry() -> serde_json::Value {
     portable_entry_for(cfg!(windows), SERVER_KEY)
-}
-
-/// The entries the old setup wrote, which setup replaces rather than keeps.
-fn legacy_portable_entries() -> [serde_json::Value; 2] {
-    [false, true].map(|windows| portable_entry_for(windows, LEGACY_SERVER_KEY))
 }
 
 fn setup_command(client: Client) -> Option<(&'static str, Vec<&'static str>)> {
@@ -238,6 +303,21 @@ pub fn setup(
 
     if let Some((program, args)) = setup_command(client) {
         if let Some(executable) = runner.resolve(program) {
+            // Only an entry the old setup wrote is replaced. One the user wrote is theirs: their
+            // client's CLI can't move it, so it stays until they do.
+            if keys.legacy
+                && !legacy_entry(client, &path)?
+                    .as_ref()
+                    .is_some_and(is_old_setup_entry)
+            {
+                return Ok(Change::ManualAction {
+                    message: format!(
+                        "The {LEGACY_SERVER_KEY} entry in {} runs a command you set. Rename its key to \
+                         {SERVER_KEY} there to keep it, or remove it and run setup again.",
+                        path.display()
+                    ),
+                });
+            }
             if !keys.current {
                 run_command(runner, &executable, &args)?;
             }
@@ -264,7 +344,7 @@ pub fn setup(
     }
 
     Ok(from_json_change(
-        merge_json(&path, portable_entry(), &legacy_portable_entries())?,
+        merge_json(&path, portable_entry())?,
         path,
         "configured",
     ))
@@ -722,7 +802,7 @@ mod tests {
         let path = home.0.join(".claude.json");
         fs::write(
             &path,
-            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": {} } })).unwrap(),
+            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": { "command": "npx", "args": ["shelbymcp"] } } })).unwrap(),
         )
         .unwrap();
         let runner = FakeRunner::succeeds(&["claude"]);
@@ -760,5 +840,91 @@ mod tests {
                 legacy: false
             }
         );
+    }
+
+    #[test]
+    fn every_entry_the_old_setup_wrote_is_recognized_and_no_user_command_is() {
+        let old = [
+            json!({ "command": "npx", "args": ["shelbymcp"] }),
+            json!({ "command": "npx", "args": ["-y", "shelbymcp"] }),
+            json!({ "type": "stdio", "command": "npx", "args": ["shelbymcp"] }),
+            json!({ "command": "cmd", "args": ["/c", "npx", "-y", "shelbymcp"] }),
+            json!({ "command": "/Users/u/.nvm/versions/node/v22.1.0/bin/node",
+                    "args": ["/Users/u/.nvm/versions/node/v22.1.0/bin/shelbymcp"] }),
+            json!({ "command": "/usr/local/bin/shelbymcp" }),
+        ];
+        for entry in &old {
+            assert!(crate::config::is_old_setup_entry(entry), "{entry}");
+        }
+        let own = [
+            json!({ "command": "/opt/memory/shelby-mcp", "args": ["--db", "/data/memory.db"] }),
+            json!({ "command": "npx", "args": ["-y", "shelbymcp"], "env": { "SHELBY_DB_PATH": "/data/memory.db" } }),
+            json!({ "command": "npx", "args": ["-y", "shelbymcp", "--db", "/data/memory.db"] }),
+            json!({ "type": "http", "url": "http://localhost:3100/mcp" }),
+            json!({}),
+        ];
+        for entry in &own {
+            assert!(!crate::config::is_old_setup_entry(entry), "{entry}");
+        }
+    }
+
+    #[test]
+    fn a_client_cli_never_replaces_a_command_the_user_wrote() {
+        let home = TempHome::new();
+        let path = home.0.join(".claude.json");
+        let own =
+            json!({ "command": "/opt/memory/shelby-mcp", "args": ["--db", "/data/memory.db"] });
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": own.clone() } })).unwrap(),
+        )
+        .unwrap();
+        let runner = FakeRunner::succeeds(&["claude"]);
+        assert!(matches!(
+            setup(Client::ClaudeCode, &home.paths(), &runner).unwrap(),
+            Change::ManualAction { .. }
+        ));
+        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(read_json(&path)["mcpServers"]["shelbymcp"], own);
+    }
+
+    #[test]
+    fn codex_tables_are_read_with_comments_spacing_and_quotes() {
+        let home = TempHome::new();
+        let path = home.0.join(".codex/config.toml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for header in [
+            "[mcp_servers.shelbymcp] # memory",
+            "[ mcp_servers.shelbymcp ]",
+            "[mcp_servers.'shelbymcp']",
+        ] {
+            fs::write(
+                &path,
+                format!("{header}\ncommand = \"npx\"\nargs = [\"shelbymcp\"]\n"),
+            )
+            .unwrap();
+            assert_eq!(
+                codex_keys(&path).unwrap(),
+                Keys {
+                    current: false,
+                    legacy: true
+                },
+                "{header}"
+            );
+            assert!(
+                is_old_setup_entry(&codex_legacy_entry(&path).unwrap().unwrap()),
+                "{header}"
+            );
+        }
+        fs::write(&path, "[mcp_servers.shelbymcp]\ncommand = \"npx\"\nargs = [\"shelbymcp\"]\n[mcp_servers.shelbymcp.env]\nSHELBY_DB_PATH = \"/data/memory.db\"\n").unwrap();
+        assert!(!is_old_setup_entry(
+            &codex_legacy_entry(&path).unwrap().unwrap()
+        ));
+        let runner = FakeRunner::succeeds(&["codex"]);
+        assert!(matches!(
+            setup(Client::Codex, &home.paths(), &runner).unwrap(),
+            Change::ManualAction { .. }
+        ));
+        assert!(runner.calls.borrow().is_empty());
     }
 }

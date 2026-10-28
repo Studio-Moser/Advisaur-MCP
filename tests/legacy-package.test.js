@@ -21,3 +21,21 @@ test("the last shelbymcp release runs the renamed package at the same version", 
   assert.equal(renamed.bin["advisaur-mcp"], "bin/advisaur-mcp.js");
   assert.equal(renamed.exports, undefined, "a subpath import needs no exports map, or one that allows it");
 });
+
+test("the npm package and the MCP Registry entry carry the server's name (ADR-0012 D1)", () => {
+  const renamed = readJson("package.json");
+  const server = readJson("server.json");
+  assert.equal(renamed.name, "advisaur-mcp");
+  assert.equal(renamed.mcpName, "io.github.Studio-Moser/advisaur-mcp");
+  assert.equal(server.name, renamed.mcpName);
+  assert.equal(server.version, renamed.version);
+  for (const entry of server.packages) {
+    assert.equal(entry.identifier, renamed.name);
+    assert.equal(entry.version, renamed.version);
+    assert.deepEqual(entry.runtimeArguments, [{ type: "positional", value: renamed.name }]);
+  }
+  for (const [platform, version] of Object.entries(renamed.optionalDependencies)) {
+    assert.match(platform, /^advisaur-mcp-(darwin|linux|win32)-(arm64|x64)$/);
+    assert.equal(version, renamed.version);
+  }
+});

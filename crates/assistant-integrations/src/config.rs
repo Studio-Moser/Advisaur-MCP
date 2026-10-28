@@ -36,6 +36,59 @@ pub const DISPLAY_NAME: &str = "Advisaur MCP";
 /// removes it, so no client is left with both.
 pub const LEGACY_SERVER_KEY: &str = "shelbymcp";
 
+/// Whether `entry` is a launch entry the old server's setup wrote, rather than one the user
+/// wrote: `npx [-y] shelbymcp` (through `cmd /c` on Windows), Cursor's `type: "stdio"` form of
+/// it, the absolute `node` running the global `shelbymcp` that setup wrote under nvm, or the
+/// global binary itself. An entry with anything besides a type, command and args (an `env`, say)
+/// is the user's.
+pub(crate) fn is_old_setup_entry(entry: &Value) -> bool {
+    let Some(object) = entry.as_object() else {
+        return false;
+    };
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "type" | "command" | "args"))
+        || object.get("type").is_some_and(|kind| kind != "stdio")
+    {
+        return false;
+    }
+    let Some(command) = object.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    let args: Vec<&str> = match object.get("args") {
+        None => Vec::new(),
+        Some(Value::Array(values)) => match values.iter().map(Value::as_str).collect() {
+            Some(args) => args,
+            None => return false,
+        },
+        Some(_) => return false,
+    };
+    let file_name = |path: &str| path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
+    let npx = |args: &[&str]| matches!(args, [LEGACY_SERVER_KEY] | ["-y", LEGACY_SERVER_KEY]);
+    match command {
+        "npx" => npx(&args),
+        "cmd" => matches!(args.as_slice(), ["/c", "npx", rest @ ..] if npx(rest)),
+        _ if matches!(file_name(command).as_str(), "node" | "node.exe") => {
+            matches!(args.as_slice(), [script] if file_name(script) == LEGACY_SERVER_KEY)
+        }
+        _ => args.is_empty() && file_name(command) == LEGACY_SERVER_KEY,
+    }
+}
+
+/// The entry under the old key in a JSON config, if there is one.
+pub(crate) fn json_legacy_entry(path: &Path) -> Result<Option<Value>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(match load_document(path)? {
+        Document::Object(document) => document
+            .get("mcpServers")
+            .and_then(|servers| servers.get(LEGACY_SERVER_KEY))
+            .cloned(),
+        Document::ManualAction(_) => None,
+    })
+}
+
 /// Which of the server's keys a client's config holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Keys {
@@ -240,10 +293,9 @@ pub(crate) fn json_keys(path: &Path) -> Result<std::result::Result<Keys, String>
     }))
 }
 
-/// Writes the server's entry. An entry under the old key is replaced: by `entry` when it's one
-/// of the stock entries the old setup wrote (`legacy_stock`), else moved as it is, since the
-/// user wrote that command themselves.
-pub(crate) fn merge_json(path: &Path, entry: Value, legacy_stock: &[Value]) -> Result<JsonChange> {
+/// Writes the server's entry. An entry under the old key is replaced: by `entry` when the old
+/// setup wrote it (`is_old_setup_entry`), else moved as it is, since the user wrote it.
+pub(crate) fn merge_json(path: &Path, entry: Value) -> Result<JsonChange> {
     let mut document = match load_document(path)? {
         Document::Object(document) => document,
         Document::ManualAction(message) => return Ok(JsonChange::ManualAction(message)),
@@ -259,7 +311,7 @@ pub(crate) fn merge_json(path: &Path, entry: Value, legacy_stock: &[Value]) -> R
         }
     } else {
         let value = match legacy {
-            Some(own) if !legacy_stock.contains(&own) => own,
+            Some(own) if !is_old_setup_entry(&own) => own,
             _ => entry,
         };
         servers.insert(SERVER_KEY.into(), value);

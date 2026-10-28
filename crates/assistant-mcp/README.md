@@ -3,7 +3,7 @@
 The Rust MCP service and command line for Advisaur memory. The crate exposes the same server as a binary and a reusable library.
 
 ```bash
-cargo run -p assistant-mcp -- --db ~/.studiomoser-assistant-mcp/memory.db
+cargo run -p assistant-mcp -- --db /tmp/advisaur-dev.db
 cargo run -p assistant-mcp -- --transport http --host 127.0.0.1 --port 3100
 ```
 

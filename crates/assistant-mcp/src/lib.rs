@@ -12,6 +12,10 @@ pub fn open_memory(path: &str) -> assistant_memory::Result<assistant_memory::Mem
     if path == ":memory:" {
         assistant_memory::Memory::open_in_memory()
     } else {
-        assistant_memory::Memory::open(path)
+        // Again just before opening: another server may have moved the old folder since.
+        assistant_memory::Memory::open(assistant_memory::brand::redirect_legacy_path(
+            &config::home_dir(),
+            std::path::Path::new(path),
+        ))
     }
 }

@@ -20,7 +20,7 @@ Prefer the package for your client because it includes the canonical Forage and 
 | Cursor | `advisaur-mcp-agent-plugin-0.4.0.zip` | Agent Plugins 1.0 package for the client plugin UI or registry. |
 | Gemini CLI | `advisaur-mcp-gemini-0.4.0.zip` | Unpack, then run `gemini extensions install <unpacked-directory>`. |
 | Antigravity | `advisaur-mcp-antigravity-0.4.0.zip` | Unpack as `advisaur-mcp` under `~/.gemini/config/plugins/`. |
-| Claude Desktop | `advisaur-mcp-claude-desktop-<platform>-0.4.0.mcpb` | Choose the artifact matching your OS and architecture, then open it in Claude Desktop. |
+| Claude Desktop | `advisaur-mcp-claude-desktop-<platform>-0.4.0.mcpb` | Choose the artifact matching your OS and architecture, then open it in Claude Desktop. It installs beside an older ShelbyMCP extension rather than replacing it: remove that one in Claude Desktop's extension settings. |
 | Devin | `advisaur-mcp-devin-0.4.0.zip` | In Settings > MCP Marketplace, choose Add Your Own and use its `registry.json` values. |
 
 Release artifacts are checksummed in `SHA256SUMS`. Review a package's MCP command and requested capabilities before installing it.

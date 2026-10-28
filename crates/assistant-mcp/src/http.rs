@@ -158,10 +158,12 @@ pub fn managed_router(memory: SharedMemory, cfg: &ServeConfig) -> (axum::Router,
         shutdown.sessions.clone(),
         config,
     );
+    // An empty key is no key: it would accept a request without credentials.
+    let api_key = cfg.api_key.clone().filter(|key| !key.is_empty());
     let auth = Auth {
-        api_key: cfg.api_key.clone(),
+        api_key: api_key.clone(),
     };
-    let oauth: axum::Router = match &cfg.api_key {
+    let oauth: axum::Router = match &api_key {
         Some(key) => {
             crate::oauth::router(crate::oauth::OAuthState::new(key.clone(), memory.clone()))
         }
@@ -213,7 +215,7 @@ pub async fn serve(memory: SharedMemory, cfg: &ServeConfig) -> std::io::Result<(
         cfg.http_host,
         cfg.http_port
     );
-    if cfg.api_key.is_some() {
+    if cfg.api_key.as_deref().is_some_and(|key| !key.is_empty()) {
         eprintln!("[INFO] Bearer token auth enabled");
     } else {
         eprintln!(
@@ -392,6 +394,20 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         }
+    }
+
+    #[tokio::test]
+    async fn an_empty_api_key_is_no_key_not_an_accepted_blank() {
+        let response = test_router(Some(""))
+            .oneshot(request(
+                Method::GET,
+                "/.well-known/oauth-authorization-server",
+                None,
+                String::new(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]

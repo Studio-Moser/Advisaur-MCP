@@ -240,13 +240,40 @@ fn the_old_data_folder_moves_once_when_the_default_database_is_used() {
         "{}",
         stderr(&output)
     );
-    assert!(!legacy.exists());
+    assert!(home.0.join(".studiomoser-assistant-mcp").is_dir());
     let moved = Memory::open(home.0.join(".studiomoser-assistant-mcp/memory.db")).unwrap();
     assert_eq!(
         get_thought(&moved.conn, &id).unwrap().unwrap().content,
         "Kept across the rename"
     );
     drop(moved);
+
+    // A client still set to a path in the old folder reaches the same database through the link
+    // left in its place, rather than a new, empty one.
+    let explicit = Command::new(env!("CARGO_BIN_EXE_advisaur-mcp"))
+        .arg("repair-projects")
+        .env("HOME", &home.0)
+        .env("USERPROFILE", &home.0)
+        .env("ADVISAUR_DB_PATH", legacy.join("memory.db"))
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert!(explicit.status.success(), "{}", stderr(&explicit));
+    assert!(
+        !stderr(&explicit).contains("Two memory folders"),
+        "{}",
+        stderr(&explicit)
+    );
+    if cfg!(unix) {
+        assert!(
+            fs::symlink_metadata(&legacy)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        let through_link = Memory::open(legacy.join("memory.db")).unwrap();
+        assert!(get_thought(&through_link.conn, &id).unwrap().is_some());
+    }
 
     // Done once: a later run has nothing to move.
     let again = home.run(&["repair-projects"]);

@@ -56,16 +56,26 @@ pub const API_KEY_ENV: (&str, &str) = (
     "SHELBY_API_KEY",
 );
 
-/// A variable under its current name, or its old one, with a warning.
+/// A variable under its current name, or its old one, with a warning. Empty counts as unset, so
+/// a blank placeholder under the new name never hides a value under the old one.
 fn env_or_legacy(
     env: &dyn Fn(&str) -> Option<String>,
     (name, legacy): (&str, &str),
 ) -> Option<String> {
-    env(name).or_else(|| {
-        let value = env(legacy)?;
+    let set = |key: &str| env(key).filter(|value| !value.is_empty());
+    set(name).or_else(|| {
+        let value = set(legacy)?;
         eprintln!("[WARN] {legacy} is deprecated; use {name}");
         Some(value)
     })
+}
+
+/// Whether the database path comes from a flag or a variable rather than the default.
+pub fn db_path_given(argv: &[String]) -> bool {
+    argv.iter().any(|arg| arg == "--db")
+        || [DB_PATH_ENV.0, DB_PATH_ENV.1]
+            .iter()
+            .any(|name| std::env::var(name).is_ok_and(|value| !value.is_empty()))
 }
 
 pub fn env_var(names: (&str, &str)) -> Option<String> {
@@ -134,7 +144,9 @@ pub fn resolve_db_path(p: &str) -> String {
     if p == ":memory:" {
         return p.to_string();
     }
-    assistant_memory::projects::canonical_path(p)
+    // A path inside the old folder, once it has moved, means the same file in the renamed one.
+    let canonical = assistant_memory::projects::canonical_path(p);
+    assistant_memory::brand::redirect_legacy_path(&home_dir(), &canonical)
         .to_string_lossy()
         .into_owned()
 }
@@ -345,5 +357,23 @@ mod tests {
             panic!()
         };
         assert_eq!(c.http_host, "127.0.0.1");
+    }
+
+    #[test]
+    fn a_blank_new_variable_never_hides_the_old_one() {
+        let env = |key: &str| match key {
+            "ADVISAUR_API_KEY" => Some(String::new()),
+            "SHELBY_API_KEY" => Some("secret".to_string()),
+            _ => None,
+        };
+        let Cli::Serve(cfg) = parse_with_env(vec![], &env).unwrap() else {
+            panic!("expected serve")
+        };
+        assert_eq!(cfg.api_key.as_deref(), Some("secret"));
+        let blank = |key: &str| (key == "ADVISAUR_API_KEY").then(String::new);
+        let Cli::Serve(cfg) = parse_with_env(vec![], &blank).unwrap() else {
+            panic!("expected serve")
+        };
+        assert_eq!(cfg.api_key, None);
     }
 }

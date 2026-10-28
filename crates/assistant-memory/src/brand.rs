@@ -57,22 +57,72 @@ pub fn data_dir(home: &Path) -> PathBuf {
     }
 }
 
-/// Moves the old data folder to the renamed one when only the old exists. Returns what to tell
-/// the user, if anything moved or the move failed (then the old folder stays in use).
+/// Whether `path` is a folder itself, not a link to one.
+fn is_real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
+}
+
+/// A path inside the old folder, pointed into the renamed one once the folder has moved. Covers a
+/// database path a client set before the rename, and the moment between the move and the link
+/// that takes the old folder's place.
+pub fn redirect_legacy_path(home: &Path, path: &Path) -> PathBuf {
+    let legacy = home.join(LEGACY_DATA_DIR_NAME);
+    let current = home.join(DATA_DIR_NAME);
+    match path.strip_prefix(&legacy) {
+        Ok(rest) if current.is_dir() && !is_real_dir(&legacy) => current.join(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
+#[cfg(unix)]
+fn link_legacy(legacy: &Path, current: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(current, legacy)
+}
+
+#[cfg(windows)]
+fn link_legacy(legacy: &Path, current: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(current, legacy)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn link_legacy(_legacy: &Path, _current: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::other("links aren't supported here"))
+}
+
+/// Moves the old data folder to the renamed one when only the old exists, and leaves a link in
+/// its place, so a client still configured with a path inside it reaches the same database.
+/// Returns what to tell the user: the move, a failed move (the old folder stays in use), or two
+/// real folders, which it never merges.
 pub fn move_legacy_data_dir(home: &Path) -> Option<String> {
     let current = home.join(DATA_DIR_NAME);
     let legacy = home.join(LEGACY_DATA_DIR_NAME);
-    if current.exists() || !legacy.exists() {
+    if !is_real_dir(&legacy) {
         return None;
     }
-    Some(match std::fs::rename(&legacy, &current) {
+    if current.exists() {
+        return Some(format!(
+            "Two memory folders exist: {} is the one the server uses by default, and {} is the old \
+             one. Move what you need from the old one, then remove it.",
+            current.display(),
+            legacy.display()
+        ));
+    }
+    if let Err(error) = std::fs::rename(&legacy, &current) {
+        return Some(format!(
+            "Couldn't move {} to {} ({error}); using the old folder",
+            legacy.display(),
+            current.display()
+        ));
+    }
+    Some(match link_legacy(&legacy, &current) {
         Ok(()) => format!(
-            "Moved the memory database from {} to {} (ADR-0012)",
+            "Moved the memory database from {} to {}, and left a link in its place (ADR-0012)",
             legacy.display(),
             current.display()
         ),
         Err(error) => format!(
-            "Couldn't move {} to {} ({error}); using the old folder",
+            "Moved the memory database from {} to {} (ADR-0012); couldn't link the old folder \
+             ({error}), so paths inside it are redirected",
             legacy.display(),
             current.display()
         ),
@@ -97,31 +147,78 @@ mod tests {
     }
 
     #[test]
-    fn the_old_folder_moves_once_and_is_read_until_it_does() {
+    fn the_old_folder_moves_once_leaving_a_link_and_is_read_until_it_does() {
         let home = home();
-        assert_eq!(data_dir(&home), home.join(DATA_DIR_NAME));
+        let legacy = home.join(LEGACY_DATA_DIR_NAME);
+        let current = home.join(DATA_DIR_NAME);
+        assert_eq!(data_dir(&home), current);
         assert_eq!(move_legacy_data_dir(&home), None);
 
-        std::fs::create_dir_all(home.join(LEGACY_DATA_DIR_NAME)).unwrap();
-        std::fs::write(
-            home.join(LEGACY_DATA_DIR_NAME).join("memory.db"),
-            b"memories",
-        )
-        .unwrap();
-        assert_eq!(data_dir(&home), home.join(LEGACY_DATA_DIR_NAME));
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("memory.db"), b"memories").unwrap();
+        assert_eq!(data_dir(&home), legacy);
 
         assert!(move_legacy_data_dir(&home).unwrap().starts_with("Moved"));
-        assert_eq!(data_dir(&home), home.join(DATA_DIR_NAME));
+        assert_eq!(data_dir(&home), current);
         assert_eq!(
-            std::fs::read(home.join(DATA_DIR_NAME).join("memory.db")).unwrap(),
+            std::fs::read(current.join("memory.db")).unwrap(),
             b"memories"
         );
-        assert!(!home.join(LEGACY_DATA_DIR_NAME).exists());
-
-        // A new folder is never replaced: an old one that turns up later stays where it is.
-        std::fs::create_dir_all(home.join(LEGACY_DATA_DIR_NAME)).unwrap();
+        // A client still configured inside the old folder reaches the same database.
+        if cfg!(unix) {
+            assert!(
+                std::fs::symlink_metadata(&legacy)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+            assert_eq!(
+                std::fs::read(legacy.join("memory.db")).unwrap(),
+                b"memories"
+            );
+        }
+        assert_eq!(
+            redirect_legacy_path(&home, &legacy.join("memory.db")),
+            current.join("memory.db")
+        );
+        // Done once: the link isn't a folder to move.
         assert_eq!(move_legacy_data_dir(&home), None);
-        assert_eq!(data_dir(&home), home.join(DATA_DIR_NAME));
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn two_real_folders_are_reported_never_merged() {
+        let home = home();
+        let legacy = home.join(LEGACY_DATA_DIR_NAME);
+        let current = home.join(DATA_DIR_NAME);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("memory.db"), b"old").unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(current.join("memory.db"), b"new").unwrap();
+        assert!(
+            move_legacy_data_dir(&home)
+                .unwrap()
+                .starts_with("Two memory folders")
+        );
+        assert_eq!(std::fs::read(legacy.join("memory.db")).unwrap(), b"old");
+        assert_eq!(std::fs::read(current.join("memory.db")).unwrap(), b"new");
+        // A real old folder is the user's: paths inside it aren't redirected.
+        assert_eq!(
+            redirect_legacy_path(&home, &legacy.join("memory.db")),
+            legacy.join("memory.db")
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn an_old_path_is_redirected_while_the_old_folder_is_missing() {
+        let home = home();
+        let current = home.join(DATA_DIR_NAME);
+        std::fs::create_dir_all(&current).unwrap();
+        let old = home.join(LEGACY_DATA_DIR_NAME).join("memory.db");
+        assert_eq!(redirect_legacy_path(&home, &old), current.join("memory.db"));
+        let elsewhere = home.join("elsewhere.db");
+        assert_eq!(redirect_legacy_path(&home, &elsewhere), elsewhere);
         std::fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -62,7 +62,11 @@ fn no_source_names_the_product_outside_the_brand() {
             if line.contains("include_str!") {
                 continue;
             }
-            let code = line.split("//").next().unwrap_or("");
+            // A comment line may name the product; a URL's `//` in code is still code.
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            let code = line;
             if ["Advisaur", "advisaur", "ADVISAUR"]
                 .iter()
                 .any(|name| code.contains(name))
