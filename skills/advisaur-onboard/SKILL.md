@@ -1,11 +1,11 @@
 ---
-name: shelby-onboard
-description: One-time onboarding interview that seeds ShelbyMCP with foundational memories about the user. Run this when a user first installs ShelbyMCP, says "get to know me", "onboard", "set up my memory", or asks why their memory is empty. Also triggers when thought_stats shows zero or very few thoughts.
+name: advisaur-onboard
+description: One-time onboarding interview that seeds Advisaur MCP with foundational memories about the user. Run this when a user first installs Advisaur MCP, says "get to know me", "onboard", "set up my memory", or asks why their memory is empty. Also triggers when thought_stats shows zero or very few thoughts.
 ---
 
-# Shelby Onboard — First-Run Memory Seeding
+# Advisaur Onboard — First-Run Memory Seeding
 
-You're running the ShelbyMCP onboarding interview. Your goal: learn enough about the user to make their AI tools immediately useful — then save it all as structured memories.
+You're running the Advisaur MCP onboarding interview. Your goal: learn enough about the user to make their AI tools immediately useful — then save it all as structured memories.
 
 This is a conversation, not a form. Ask a few questions, listen carefully, capture what you learn, then ask smarter follow-ups based on what they told you. By the end, the user should have 15-30 well-tagged memories that make every future AI interaction better.
 
@@ -117,7 +117,7 @@ Ask:
 
 ## Importing Migration Data
 
-If the user has output from the migration prompt (from `shelbymcp migrate`), they'll paste a structured block of text. Parse it and capture each item as a thought:
+If the user has output from the migration prompt (from `advisaur-mcp migrate`), they'll paste a structured block of text. Parse it and capture each item as a thought:
 
 1. Read through the entire pasted content first to understand the structure
 2. For each distinct piece of information, create a thought with:
@@ -138,7 +138,7 @@ After the final round:
 1. Run `thought_stats` to show the user the final count
 2. Give a brief summary of what was captured — group by area (identity, projects, team, preferences, anti-patterns)
 3. Suggest connecting related thoughts: "I can run a quick pass to link related memories — want me to?" If yes, use `manage_edges` to create `related` edges between thoughts that reference the same projects, people, or topics.
-4. Mention Forage: "ShelbyMCP has a daily maintenance skill called Forage that will automatically enrich and connect your memories over time. If you haven't set it up yet, run `shelbymcp setup <your-agent> --forage`."
+4. Mention Forage: "Advisaur MCP has a daily maintenance skill called Forage that will automatically enrich and connect your memories over time. If you haven't set it up yet, run `advisaur-mcp setup <your-agent> --forage`."
 5. End with something like: "You're all set. Your AI tools now have context about who you are, what you're building, and how you like to work. This will get better over time as more memories are captured naturally."
 
 ## Guidelines

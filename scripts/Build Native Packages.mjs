@@ -56,7 +56,7 @@ export function buildNativePackage({ target, binary, output }) {
 
   const outputDir = resolve(output);
   mkdirSync(outputDir, { recursive: true });
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "shelbymcp-native-"));
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "advisaur-mcp-native-"));
   try {
     const packageRoot = join(temporaryRoot, definition.packageDir);
     const binDir = join(packageRoot, "bin");

@@ -40,7 +40,7 @@ export function verifyPackage(binary) {
   const target = CURRENT_TARGETS.get(`${process.platform}-${process.arch}`);
   if (!target) throw new Error(`Unsupported verification platform: ${process.platform}-${process.arch}`);
 
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "shelbymcp-verify-"));
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "advisaur-mcp-verify-"));
   try {
     const archives = join(temporaryRoot, "archives");
     const prefix = join(temporaryRoot, "install");
@@ -72,8 +72,8 @@ export function verifyPackage(binary) {
     ]);
 
     const executable = process.platform === "win32"
-      ? join(prefix, "node_modules", ".bin", "shelbymcp.cmd")
-      : join(prefix, "node_modules", ".bin", "shelbymcp");
+      ? join(prefix, "node_modules", ".bin", "advisaur-mcp.cmd")
+      : join(prefix, "node_modules", ".bin", "advisaur-mcp");
     const version = run(executable, ["--version"]);
     if (version.stdout.trim() !== "advisaur-mcp v0.4.0") {
       throw new Error(`Unexpected packaged version: ${version.stdout.trim()}`);

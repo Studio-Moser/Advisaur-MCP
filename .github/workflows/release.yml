@@ -63,11 +63,11 @@ jobs:
           mkdir -p release-staging release-assets
           cp "target/${{ matrix.target }}/release/advisaur-mcp" release-staging/
           cp LICENSE release-staging/
-          tar -C release-staging -czf "release-assets/shelby-mcp-${{ matrix.target }}.tar.gz" advisaur-mcp LICENSE
+          tar -C release-staging -czf "release-assets/advisaur-mcp-${{ matrix.target }}.tar.gz" advisaur-mcp LICENSE
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            (cd release-assets && shasum -a 256 "shelby-mcp-${{ matrix.target }}.tar.gz" > "shelby-mcp-${{ matrix.target }}.tar.gz.sha256")
+            (cd release-assets && shasum -a 256 "advisaur-mcp-${{ matrix.target }}.tar.gz" > "advisaur-mcp-${{ matrix.target }}.tar.gz.sha256")
           else
-            (cd release-assets && sha256sum "shelby-mcp-${{ matrix.target }}.tar.gz" > "shelby-mcp-${{ matrix.target }}.tar.gz.sha256")
+            (cd release-assets && sha256sum "advisaur-mcp-${{ matrix.target }}.tar.gz" > "advisaur-mcp-${{ matrix.target }}.tar.gz.sha256")
           fi
 
       - name: Archive Windows binary and license
@@ -77,9 +77,9 @@ jobs:
           New-Item -ItemType Directory -Force release-staging, release-assets | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/advisaur-mcp.exe" release-staging/
           Copy-Item LICENSE release-staging/
-          Compress-Archive -Path release-staging/advisaur-mcp.exe, release-staging/LICENSE -DestinationPath "release-assets/shelby-mcp-${{ matrix.target }}.zip"
-          $hash = (Get-FileHash "release-assets/shelby-mcp-${{ matrix.target }}.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  shelby-mcp-${{ matrix.target }}.zip" | Set-Content -NoNewline "release-assets/shelby-mcp-${{ matrix.target }}.zip.sha256"
+          Compress-Archive -Path release-staging/advisaur-mcp.exe, release-staging/LICENSE -DestinationPath "release-assets/advisaur-mcp-${{ matrix.target }}.zip"
+          $hash = (Get-FileHash "release-assets/advisaur-mcp-${{ matrix.target }}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  advisaur-mcp-${{ matrix.target }}.zip" | Set-Content -NoNewline "release-assets/advisaur-mcp-${{ matrix.target }}.zip.sha256"
 
       - name: Upload native artifact
         uses: actions/upload-artifact@v7
@@ -118,10 +118,10 @@ jobs:
           mkdir -p target/release-binaries
           for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
             mkdir -p "target/release-binaries/$target"
-            tar -xzf "downloaded/shelby-mcp-$target.tar.gz" -C "target/release-binaries/$target" advisaur-mcp
+            tar -xzf "downloaded/advisaur-mcp-$target.tar.gz" -C "target/release-binaries/$target" advisaur-mcp
           done
           mkdir -p target/release-binaries/x86_64-pc-windows-msvc
-          unzip -q downloaded/shelby-mcp-x86_64-pc-windows-msvc.zip advisaur-mcp.exe -d target/release-binaries/x86_64-pc-windows-msvc
+          unzip -q downloaded/advisaur-mcp-x86_64-pc-windows-msvc.zip advisaur-mcp.exe -d target/release-binaries/x86_64-pc-windows-msvc
           chmod +x target/release-binaries/*/advisaur-mcp
 
       - name: Install package tooling
@@ -142,6 +142,8 @@ jobs:
           node "scripts/Build Native Packages.mjs" --target x86_64-unknown-linux-gnu --binary target/release-binaries/x86_64-unknown-linux-gnu/advisaur-mcp --output target/release-assets
           node "scripts/Build Native Packages.mjs" --target x86_64-pc-windows-msvc --binary target/release-binaries/x86_64-pc-windows-msvc/advisaur-mcp.exe --output target/release-assets
           npm pack . --pack-destination target/release-assets
+          # The last release under the old name, which runs advisaur-mcp (ADR-0012 D6).
+          npm pack ./deprecated/shelbymcp --pack-destination target/release-assets
 
       - name: Verify npm and integration packages
         run: |
@@ -159,7 +161,7 @@ jobs:
         shell: bash
         run: |
           for client in agent-plugin codex claude-code gemini antigravity devin; do
-            (cd "target/integrations/$client" && zip -X -q -r "../../release-assets/shelbymcp-$client-0.4.0.zip" .)
+            (cd "target/integrations/$client" && zip -X -q -r "../../release-assets/advisaur-mcp-$client-0.4.0.zip" .)
           done
           cp target/integrations/*.mcpb target/release-assets/
           cp target/package/*.crate target/release-assets/
@@ -169,7 +171,7 @@ jobs:
       - name: Upload complete release
         uses: actions/upload-artifact@v7
         with:
-          name: shelbymcp-release
+          name: advisaur-mcp-release
           path: target/release-assets/*
           if-no-files-found: error
 
@@ -198,7 +200,7 @@ jobs:
       - name: Download verified release
         uses: actions/download-artifact@v8
         with:
-          name: shelbymcp-release
+          name: advisaur-mcp-release
           path: target/release-assets
 
       - name: Publish platform packages before wrapper
@@ -207,9 +209,11 @@ jobs:
         shell: bash
         run: |
           for package in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
-            npm publish "target/release-assets/shelbymcp-$package-0.4.0.tgz" --access public --provenance
+            npm publish "target/release-assets/advisaur-mcp-$package-0.4.0.tgz" --access public --provenance
           done
+          npm publish target/release-assets/advisaur-mcp-0.4.0.tgz --access public --provenance
           npm publish target/release-assets/shelbymcp-0.4.0.tgz --access public --provenance
+          npm deprecate shelbymcp "Renamed to advisaur-mcp: change your MCP config to npx -y advisaur-mcp"
 
       - name: Publish reusable Rust crates
         env:

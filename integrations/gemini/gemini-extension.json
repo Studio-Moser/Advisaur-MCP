@@ -1,11 +1,11 @@
 {
-  "name": "shelbymcp",
+  "name": "advisaur-mcp",
   "version": "0.4.0",
   "description": "Local knowledge-graph memory for Gemini CLI",
   "mcpServers": {
-    "shelbymcp": {
+    "advisaur-mcp": {
       "command": "npx",
-      "args": ["-y", "shelbymcp"]
+      "args": ["-y", "advisaur-mcp"]
     }
   }
 }

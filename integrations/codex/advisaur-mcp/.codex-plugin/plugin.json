@@ -1,18 +1,18 @@
 {
-  "name": "shelbymcp",
+  "name": "advisaur-mcp",
   "version": "0.4.0",
   "description": "Local knowledge-graph memory for Codex and ChatGPT",
   "author": {
     "name": "Studio Moser",
     "url": "https://github.com/Studio-Moser"
   },
-  "homepage": "https://github.com/Studio-Moser/shelbymcp",
-  "repository": "https://github.com/Studio-Moser/shelbymcp",
+  "homepage": "https://github.com/Studio-Moser/Advisaur-MCP",
+  "repository": "https://github.com/Studio-Moser/Advisaur-MCP",
   "license": "MIT",
   "keywords": ["memory", "mcp", "knowledge-graph"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "ShelbyMCP",
+    "displayName": "Advisaur MCP",
     "shortDescription": "Persistent local memory for AI work.",
     "longDescription": "Capture, search, and connect durable memories through a local knowledge graph shared across AI clients.",
     "developerName": "Studio Moser",
@@ -20,7 +20,7 @@
     "capabilities": ["Memory", "Search"],
     "defaultPrompt": [
       "Recall what we previously decided about this project.",
-      "Save this decision to Shelby memory."
+      "Save this decision to Advisaur memory."
     ]
   },
   "mcpServers": "./.mcp.json"

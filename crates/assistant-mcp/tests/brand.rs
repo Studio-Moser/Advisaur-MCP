@@ -58,10 +58,14 @@ fn no_source_names_the_product_outside_the_brand() {
             if line.trim() == "#[cfg(test)]" {
                 break;
             }
+            // Paths to assets are file names, which can't come from a constant.
+            if line.contains("include_str!") {
+                continue;
+            }
             let code = line.split("//").next().unwrap_or("");
-            if code.contains("\"Advisaur")
-                || code.contains("\"advisaur")
-                || code.contains("ADVISAUR")
+            if ["Advisaur", "advisaur", "ADVISAUR"]
+                .iter()
+                .any(|name| code.contains(name))
             {
                 stray.push(format!("{relative}:{}: {}", number + 1, line.trim()));
             }

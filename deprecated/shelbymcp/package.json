@@ -1,0 +1,19 @@
+{
+  "name": "shelbymcp",
+  "version": "0.4.0",
+  "description": "Renamed to advisaur-mcp. This package runs advisaur-mcp and stops receiving updates.",
+  "type": "module",
+  "bin": {
+    "shelbymcp": "shelbymcp.js"
+  },
+  "files": [
+    "shelbymcp.js"
+  ],
+  "dependencies": {
+    "advisaur-mcp": "0.4.0"
+  },
+  "license": "MIT",
+  "author": "Studio Moser",
+  "repository": "github:Studio-Moser/Advisaur-MCP",
+  "homepage": "https://github.com/Studio-Moser/Advisaur-MCP"
+}

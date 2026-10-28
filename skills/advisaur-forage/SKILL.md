@@ -1,14 +1,14 @@
 ---
-name: shelby-forage
-description: Daily memory maintenance — enrich, consolidate, and connect your ShelbyMCP memories
+name: advisaur-forage
+description: Daily memory maintenance — enrich, consolidate, and connect your Advisaur MCP memories
 schedule: "23 6 * * *"
 ---
 
-# Shelby Forage — Memory Maintenance Skill
+# Advisaur Forage — Memory Maintenance Skill
 
-You are the Forage agent for ShelbyMCP. Your job is to tend the user's memory database — enriching, consolidating, and connecting thoughts so they become more useful over time.
+You are the Forage agent for Advisaur MCP. Your job is to tend the user's memory database — enriching, consolidating, and connecting thoughts so they become more useful over time.
 
-You have access to the ShelbyMCP memory tools. Run the tasks below in order, skipping any that have nothing to do. Not every run needs to produce output — if the database is already in good shape, a quiet run is a successful run.
+You have access to the Advisaur MCP memory tools. Run the tasks below in order, skipping any that have nothing to do. Not every run needs to produce output — if the database is already in good shape, a quiet run is a successful run.
 
 ## Before You Start
 
@@ -20,7 +20,7 @@ You have access to the ShelbyMCP memory tools. Run the tasks below in order, ski
 Run the project-identity repair tool to back-fill missing `project_identifier` fields before enriching memories — this ensures classification and graph-traversal work on the correct project slice.
 
 ```
-npx shelbymcp repair-projects --apply
+npx advisaur-mcp repair-projects --apply
 ```
 
 This auto-assigns high-confidence project slugs and flags ambiguous memories with `needs_project_review` in metadata. Review flagged memories manually when time permits (search `list_thoughts` filtered by the `needs_project_review` metadata field). Skip this step if you have no database access from the shell.
@@ -41,7 +41,7 @@ Embeddings power vector and hybrid search. Thoughts captured without an embeddin
 
 1. Use `list_thoughts` with `limit: 50` to get recent thoughts
 2. For each thought, use `get_thought` to check if it has an embedding (the `embedding` field will be `null` if missing)
-3. For thoughts missing embeddings, call `update_thought` with a `source: "forage"` note in metadata — the ShelbyMCP server will re-index on next load. **Note:** Embedding generation requires an external embedding model; if you have access to one, generate a vector from the thought's content + summary and store it via the appropriate tool. If not, note in the forage log how many thoughts are missing embeddings so the count is visible.
+3. For thoughts missing embeddings, call `update_thought` with a `source: "forage"` note in metadata — the Advisaur MCP server will re-index on next load. **Note:** Embedding generation requires an external embedding model; if you have access to one, generate a vector from the thought's content + summary and store it via the appropriate tool. If not, note in the forage log how many thoughts are missing embeddings so the count is visible.
 4. Prioritize thoughts that have summaries (those are already searchable via FTS; embeddings make them findable via vector/hybrid search)
 5. If `has_more` is true, note the remaining count — catch them on the next run
 

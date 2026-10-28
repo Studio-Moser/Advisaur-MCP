@@ -93,11 +93,15 @@ fn setup_and_uninstall_validate_the_client_before_writing() {
 #[test]
 fn static_commands_keep_payloads_on_stdout_and_guidance_on_stderr() {
     let cases = [
-        ("protocol", "# ShelbyMCP — Memory Protocol", false),
-        ("forage", "# Shelby Forage — Memory Maintenance Skill", true),
+        ("protocol", "# Advisaur MCP — Memory Protocol", false),
+        (
+            "forage",
+            "# Advisaur Forage — Memory Maintenance Skill",
+            true,
+        ),
         (
             "onboard",
-            "# Shelby Onboard — First-Run Memory Seeding",
+            "# Advisaur Onboard — First-Run Memory Seeding",
             true,
         ),
         ("migrate", "I'm moving my AI memory to a new system.", true),

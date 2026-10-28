@@ -8,33 +8,35 @@ import { buildIntegrationPackages, safeCopyTree } from "../scripts/Build Integra
 
 const root = resolve(import.meta.dirname, "..");
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
-const server = { command: "npx", args: ["-y", "shelbymcp"] };
+const server = { command: "npx", args: ["-y", "advisaur-mcp"] };
 
 test("source manifests match each current client contract", () => {
   const agent = readJson("integrations/agent-plugin/plugin.json");
   assert.equal(agent.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
-  assert.equal(agent.name, "shelbymcp");
+  assert.equal(agent.name, "advisaur-mcp");
   assert.equal(agent.version, "0.4.0");
   const agentMcp = readJson("integrations/agent-plugin/mcp.json");
   assert.equal(agentMcp.$schema, "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json");
-  assert.deepEqual(agentMcp.mcpServers.shelbymcp, { type: "stdio", ...server });
+  assert.deepEqual(agentMcp.mcpServers["advisaur-mcp"], { type: "stdio", ...server });
 
-  const codex = readJson("integrations/codex/shelbymcp/.codex-plugin/plugin.json");
-  assert.equal(codex.name, "shelbymcp");
+  const codex = readJson("integrations/codex/advisaur-mcp/.codex-plugin/plugin.json");
+  assert.equal(codex.name, "advisaur-mcp");
   assert.equal(codex.version, "0.4.0");
-  assert.deepEqual(readJson("integrations/codex/shelbymcp/.mcp.json").mcpServers.shelbymcp, server);
+  assert.deepEqual(readJson("integrations/codex/advisaur-mcp/.mcp.json").mcpServers["advisaur-mcp"], server);
 
   const claude = readJson("integrations/claude-code/.claude-plugin/plugin.json");
+  assert.equal(claude.name, "advisaur"); // the Claude Code plugin and marketplace (ADR-0012 D4)
+  assert.equal(readJson(".claude-plugin/marketplace.json").name, "advisaur");
   assert.equal(claude.version, "0.4.0");
-  assert.deepEqual(readJson("integrations/claude-code/.mcp.json").mcpServers.shelbymcp, server);
+  assert.deepEqual(readJson("integrations/claude-code/.mcp.json").mcpServers["advisaur-mcp"], server);
 
   const gemini = readJson("integrations/gemini/gemini-extension.json");
   assert.equal(gemini.version, "0.4.0");
-  assert.deepEqual(gemini.mcpServers.shelbymcp, server);
+  assert.deepEqual(gemini.mcpServers["advisaur-mcp"], server);
 
   const antigravity = readJson("integrations/antigravity/plugin.json");
   assert.equal(antigravity.version, "0.4.0");
-  assert.deepEqual(readJson("integrations/antigravity/mcp_config.json").mcpServers.shelbymcp, server);
+  assert.deepEqual(readJson("integrations/antigravity/mcp_config.json").mcpServers["advisaur-mcp"], server);
 
   const mcpb = readJson("integrations/claude-desktop/manifest.json");
   assert.equal(mcpb.manifest_version, "0.4");
@@ -50,7 +52,7 @@ test("source manifests match each current client contract", () => {
 });
 
 test("assembly copies canonical skills byte-for-byte and builds a platform-specific MCPB", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-integrations-"));
+  const temporary = mkdtempSync(join(tmpdir(), "advisaur-mcp-integrations-"));
   const binary = join(temporary, "advisaur-mcp");
   writeFileSync(binary, "fake native binary");
   const output = join(temporary, "output");
@@ -58,7 +60,7 @@ test("assembly copies canonical skills byte-for-byte and builds a platform-speci
   buildIntegrationPackages({ clients: ["all"], binary, output });
 
   for (const client of ["agent-plugin", "codex", "claude-code", "gemini", "antigravity"]) {
-    for (const skill of ["shelby-forage", "shelby-onboard"]) {
+    for (const skill of ["advisaur-forage", "advisaur-onboard"]) {
       assert.equal(
         readFileSync(join(output, client, "skills", skill, "SKILL.md"), "utf8"),
         readFileSync(join(root, "skills", skill, "SKILL.md"), "utf8"),
@@ -73,12 +75,12 @@ test("assembly copies canonical skills byte-for-byte and builds a platform-speci
   );
   const packagedManifest = JSON.parse(readFileSync(join(packageRoot, "manifest.json"), "utf8"));
   assert.deepEqual(packagedManifest.compatibility.platforms, [process.platform]);
-  assert.ok(existsSync(join(output, `shelbymcp-claude-desktop-${platform}-0.4.0.mcpb`)));
+  assert.ok(existsSync(join(output, `advisaur-mcp-claude-desktop-${platform}-0.4.0.mcpb`)));
   assert.equal(lstatSync(join(packageRoot, "server", "advisaur-mcp")).isSymbolicLink(), false);
 });
 
 test("assembly names Windows MCPB binaries with the executable suffix", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-windows-mcpb-"));
+  const temporary = mkdtempSync(join(tmpdir(), "advisaur-mcp-windows-mcpb-"));
   const binary = join(temporary, "advisaur-mcp.exe");
   writeFileSync(binary, "fake Windows binary");
   const output = join(temporary, "output");
@@ -97,7 +99,7 @@ test("assembly names Windows MCPB binaries with the executable suffix", () => {
 });
 
 test("assembly rejects unknown clients and source symlinks", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-integrations-safety-"));
+  const temporary = mkdtempSync(join(tmpdir(), "advisaur-mcp-integrations-safety-"));
   const binary = join(temporary, "advisaur-mcp");
   writeFileSync(binary, "binary");
   assert.throws(

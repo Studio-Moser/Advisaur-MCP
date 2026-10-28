@@ -54,12 +54,16 @@ fn integration_paths() -> IntegrationPaths {
 
 fn parse_client(value: Option<String>, command: &str) -> Result<Client, i32> {
     let Some(value) = value else {
-        eprintln!("[ERROR] Missing client.\nUsage: advisaur-mcp {command} <client>");
+        eprintln!(
+            "[ERROR] Missing client.\nUsage: {} {command} <client>",
+            assistant_memory::brand::SERVER_NAME
+        );
         return Err(1);
     };
     let Some(client) = Client::parse(&value) else {
         eprintln!(
-            "[ERROR] Unknown client: {value}\nUsage: advisaur-mcp {command} <client>\nClients: claude-code, claude-desktop, cursor, codex, devin, gemini, antigravity"
+            "[ERROR] Unknown client: {value}\nUsage: {} {command} <client>\nClients: claude-code, claude-desktop, cursor, codex, devin, gemini, antigravity",
+            assistant_memory::brand::SERVER_NAME
         );
         return Err(1);
     };
@@ -119,8 +123,9 @@ fn run_setup(client: Option<String>, forage: bool, onboard: bool) -> i32 {
     }
     if forage {
         println!(
-            "Forage is included in the {}. Run `advisaur-mcp forage` for the standalone skill body.",
-            client.info().package_kind
+            "Forage is included in the {}. Run `{} forage` for the standalone skill body.",
+            client.info().package_kind,
+            assistant_memory::brand::SERVER_NAME
         );
     }
     if onboard {

@@ -8,11 +8,11 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const PLATFORM_PACKAGES = new Map([
-  ["darwin-arm64", "shelbymcp-darwin-arm64"],
-  ["darwin-x64", "shelbymcp-darwin-x64"],
-  ["linux-arm64", "shelbymcp-linux-arm64"],
-  ["linux-x64", "shelbymcp-linux-x64"],
-  ["win32-x64", "shelbymcp-win32-x64"],
+  ["darwin-arm64", "advisaur-mcp-darwin-arm64"],
+  ["darwin-x64", "advisaur-mcp-darwin-x64"],
+  ["linux-arm64", "advisaur-mcp-linux-arm64"],
+  ["linux-x64", "advisaur-mcp-linux-x64"],
+  ["win32-x64", "advisaur-mcp-win32-x64"],
 ]);
 
 const SIGNAL_NUMBERS = {
@@ -44,7 +44,7 @@ export function resolveBinary(packageName, resolver = require.resolve, platform 
     manifest = resolver(`${packageName}/package.json`);
   } catch (error) {
     throw new Error(
-      `npm install did not include ${packageName}; reinstall shelbymcp for this platform`,
+      `npm install did not include ${packageName}; reinstall advisaur-mcp for this platform`,
       { cause: error },
     );
   }
@@ -65,7 +65,7 @@ export function launch(argv, dependencies = {}) {
     const binary = resolveBinary(packageName, resolver, platform);
     const result = run(binary, argv, { stdio: "inherit", shell: false });
     if (result.error) {
-      writeError(`shelbymcp: ${result.error.message}\n`);
+      writeError(`advisaur-mcp: ${result.error.message}\n`);
       return 1;
     }
     if (result.signal) {
@@ -73,7 +73,7 @@ export function launch(argv, dependencies = {}) {
     }
     return result.status ?? 1;
   } catch (error) {
-    writeError(`shelbymcp: ${error.message}\n`);
+    writeError(`advisaur-mcp: ${error.message}\n`);
     return 1;
   }
 }

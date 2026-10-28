@@ -16,12 +16,12 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const canonicalSkills = ["shelby-forage", "shelby-onboard"];
+const canonicalSkills = ["advisaur-forage", "advisaur-onboard"];
 const packageClients = ["agent-plugin", "codex", "claude-code", "gemini", "antigravity"];
 const allClients = [...packageClients, "claude-desktop", "devin"];
 const sourceRoots = {
   "agent-plugin": join(repositoryRoot, "integrations", "agent-plugin"),
-  codex: join(repositoryRoot, "integrations", "codex", "shelbymcp"),
+  codex: join(repositoryRoot, "integrations", "codex", "advisaur-mcp"),
   "claude-code": join(repositoryRoot, "integrations", "claude-code"),
   gemini: join(repositoryRoot, "integrations", "gemini"),
   antigravity: join(repositoryRoot, "integrations", "antigravity"),
@@ -101,7 +101,7 @@ function buildMcpb(target, binary, outputRoot) {
 
   const archive = join(
     outputRoot,
-    `shelbymcp-claude-desktop-${definition.slug}-${manifest.version}.mcpb`,
+    `advisaur-mcp-claude-desktop-${definition.slug}-${manifest.version}.mcpb`,
   );
   const packed = spawnSync("zip", ["-X", "-q", "-r", archive, "manifest.json", "server"], {
     cwd: packageRoot,

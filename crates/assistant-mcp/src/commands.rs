@@ -77,11 +77,11 @@ pub fn protocol() -> &'static str {
 }
 
 pub fn forage() -> &'static str {
-    strip_frontmatter(include_str!("../../../skills/shelby-forage/SKILL.md"))
+    strip_frontmatter(include_str!("../../../skills/advisaur-forage/SKILL.md"))
 }
 
 pub fn onboard() -> &'static str {
-    strip_frontmatter(include_str!("../../../skills/shelby-onboard/SKILL.md"))
+    strip_frontmatter(include_str!("../../../skills/advisaur-onboard/SKILL.md"))
 }
 
 pub fn migrate() -> &'static str {
@@ -100,8 +100,8 @@ mod tests {
             strip_frontmatter("---\nname: x\nbody"),
             "---\nname: x\nbody"
         );
-        assert!(forage().starts_with("# Shelby Forage"));
-        assert!(onboard().starts_with("# Shelby Onboard"));
+        assert!(forage().starts_with("# Advisaur Forage"));
+        assert!(onboard().starts_with("# Advisaur Onboard"));
     }
 
     #[test]

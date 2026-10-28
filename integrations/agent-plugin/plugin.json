@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "shelbymcp",
+  "name": "advisaur-mcp",
   "version": "0.4.0",
   "description": "Local knowledge-graph memory for AI agents",
   "author": {

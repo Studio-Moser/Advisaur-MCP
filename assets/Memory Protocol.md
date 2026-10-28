@@ -1,6 +1,6 @@
-# ShelbyMCP — Memory Protocol
+# Advisaur MCP — Memory Protocol
 
-You have persistent memory via ShelbyMCP tools. Memory survives across sessions and is shared across all AI tools the user works with. You MUST use it — do not rely on conversation context alone.
+You have persistent memory via Advisaur MCP tools. Memory survives across sessions and is shared across all AI tools the user works with. You MUST use it — do not rely on conversation context alone.
 
 ## When to SAVE (mandatory)
 
