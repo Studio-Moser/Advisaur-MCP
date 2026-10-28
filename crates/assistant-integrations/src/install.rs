@@ -936,6 +936,14 @@ mod tests {
             renamed["env"],
             json!({ "ADVISAUR_DB_PATH": "/data/team.db", "ADVISAUR_API_KEY": "k", "OTHER": "1" })
         );
+        // A blank placeholder under the new name doesn't keep the old value out.
+        let blank = renamed_entry(&json!({
+            "command": "npx",
+            "args": ["shelbymcp"],
+            "env": { "ADVISAUR_DB_PATH": "", "SHELBY_DB_PATH": "/data/team.db" },
+        }))
+        .unwrap();
+        assert_eq!(blank["env"], json!({ "ADVISAUR_DB_PATH": "/data/team.db" }));
     }
 
     #[test]

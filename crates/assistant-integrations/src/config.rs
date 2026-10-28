@@ -116,9 +116,9 @@ pub(crate) fn renamed_entry(entry: &Value) -> Option<Value> {
     // The old variable names are read for one release only; the entry takes the new ones.
     if let Some(Value::Object(env)) = entry.get_mut("env") {
         for (old, new) in LEGACY_ENV {
-            if !env.contains_key(*new)
-                && let Some(value) = env.remove(*old)
-            {
+            // A blank new name is unset to the server too, so the old value takes its place.
+            let unset = env.get(*new).is_none_or(|value| value.as_str() == Some(""));
+            if unset && let Some(value) = env.remove(*old) {
                 env.insert((*new).into(), value);
             }
         }
