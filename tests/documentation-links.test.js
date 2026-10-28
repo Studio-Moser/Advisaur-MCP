@@ -25,7 +25,7 @@ test("builds GitHub-style heading anchors including duplicates", () => {
 });
 
 test("reports the source line for missing files and anchors", () => {
-  const root = mkdtempSync(join(tmpdir(), "shelbymcp-doc-links-"));
+  const root = mkdtempSync(join(tmpdir(), "advisaur-mcp-doc-links-"));
   mkdirSync(join(root, "docs"));
   writeFileSync(join(root, "README.md"), [
     "[good](docs/Guide.md#real-heading)",

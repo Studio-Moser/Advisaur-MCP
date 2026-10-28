@@ -16,23 +16,23 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const canonicalSkills = ["shelby-forage", "shelby-onboard"];
+const canonicalSkills = ["advisaur-forage", "advisaur-onboard"];
 const packageClients = ["agent-plugin", "codex", "claude-code", "gemini", "antigravity"];
 const allClients = [...packageClients, "claude-desktop", "devin"];
 const sourceRoots = {
   "agent-plugin": join(repositoryRoot, "integrations", "agent-plugin"),
-  codex: join(repositoryRoot, "integrations", "codex", "shelbymcp"),
+  codex: join(repositoryRoot, "integrations", "codex", "advisaur-mcp"),
   "claude-code": join(repositoryRoot, "integrations", "claude-code"),
   gemini: join(repositoryRoot, "integrations", "gemini"),
   antigravity: join(repositoryRoot, "integrations", "antigravity"),
   devin: join(repositoryRoot, "integrations", "devin"),
 };
 const mcpbTargets = new Map([
-  ["aarch64-apple-darwin", { slug: "darwin-arm64", platform: "darwin", executable: "shelby-mcp" }],
-  ["x86_64-apple-darwin", { slug: "darwin-x64", platform: "darwin", executable: "shelby-mcp" }],
-  ["aarch64-unknown-linux-gnu", { slug: "linux-arm64", platform: "linux", executable: "shelby-mcp" }],
-  ["x86_64-unknown-linux-gnu", { slug: "linux-x64", platform: "linux", executable: "shelby-mcp" }],
-  ["x86_64-pc-windows-msvc", { slug: "win32-x64", platform: "win32", executable: "shelby-mcp.exe" }],
+  ["aarch64-apple-darwin", { slug: "darwin-arm64", platform: "darwin", executable: "advisaur-mcp" }],
+  ["x86_64-apple-darwin", { slug: "darwin-x64", platform: "darwin", executable: "advisaur-mcp" }],
+  ["aarch64-unknown-linux-gnu", { slug: "linux-arm64", platform: "linux", executable: "advisaur-mcp" }],
+  ["x86_64-unknown-linux-gnu", { slug: "linux-x64", platform: "linux", executable: "advisaur-mcp" }],
+  ["x86_64-pc-windows-msvc", { slug: "win32-x64", platform: "win32", executable: "advisaur-mcp.exe" }],
 ]);
 const hostTargets = new Map([
   ["darwin-arm64", "aarch64-apple-darwin"],
@@ -101,7 +101,7 @@ function buildMcpb(target, binary, outputRoot) {
 
   const archive = join(
     outputRoot,
-    `shelbymcp-claude-desktop-${definition.slug}-${manifest.version}.mcpb`,
+    `advisaur-mcp-claude-desktop-${definition.slug}-${manifest.version}.mcpb`,
   );
   const packed = spawnSync("zip", ["-X", "-q", "-r", archive, "manifest.json", "server"], {
     cwd: packageRoot,

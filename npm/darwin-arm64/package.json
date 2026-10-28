@@ -1,8 +1,8 @@
 {
-  "name": "shelbymcp-darwin-arm64",
+  "name": "advisaur-mcp-darwin-arm64",
   "version": "0.4.0",
-  "description": "ShelbyMCP native binary for macOS ARM64",
+  "description": "Advisaur MCP native binary for macOS ARM64",
   "license": "MIT",
   "files": ["bin", "LICENSE"],
-  "repository": "github:Studio-Moser/shelbymcp"
+  "repository": "github:Studio-Moser/Advisaur-MCP"
 }

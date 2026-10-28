@@ -1,11 +1,11 @@
 {
-  "name": "shelbymcp",
-  "mcpName": "io.github.Studio-Moser/shelbymcp",
+  "name": "advisaur-mcp",
+  "mcpName": "io.github.Studio-Moser/advisaur-mcp",
   "version": "0.4.0",
   "description": "Knowledge-graph memory server for AI tools via MCP",
   "type": "module",
   "bin": {
-    "shelbymcp": "bin/shelbymcp.js"
+    "advisaur-mcp": "bin/advisaur-mcp.js"
   },
   "files": [
     "bin",
@@ -15,26 +15,26 @@
     "npm/*"
   ],
   "scripts": {
-    "start": "node bin/shelbymcp.js",
-    "build": "cargo build -p shelby-mcp",
+    "start": "node bin/advisaur-mcp.js",
+    "build": "cargo build -p assistant-mcp",
     "test": "node --test tests/*.test.js && node \"scripts/Check Documentation Links.mjs\"",
     "check": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "optionalDependencies": {
-    "shelbymcp-darwin-arm64": "0.4.0",
-    "shelbymcp-darwin-x64": "0.4.0",
-    "shelbymcp-linux-arm64": "0.4.0",
-    "shelbymcp-linux-x64": "0.4.0",
-    "shelbymcp-win32-x64": "0.4.0"
+    "advisaur-mcp-darwin-arm64": "0.4.0",
+    "advisaur-mcp-darwin-x64": "0.4.0",
+    "advisaur-mcp-linux-arm64": "0.4.0",
+    "advisaur-mcp-linux-x64": "0.4.0",
+    "advisaur-mcp-win32-x64": "0.4.0"
   },
   "license": "MIT",
   "author": "Studio Moser",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Studio-Moser/shelbymcp.git"
+    "url": "https://github.com/Studio-Moser/Advisaur-MCP.git"
   },
-  "homepage": "https://github.com/Studio-Moser/shelbymcp",
-  "bugs": "https://github.com/Studio-Moser/shelbymcp/issues",
+  "homepage": "https://github.com/Studio-Moser/Advisaur-MCP",
+  "bugs": "https://github.com/Studio-Moser/Advisaur-MCP/issues",
   "keywords": [
     "mcp",
     "memory",

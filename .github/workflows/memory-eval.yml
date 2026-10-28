@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r path; do
             case "$path" in
               Cargo.lock | Cargo.toml | \
-              crates/shelby-memory/* | crates/shelby-mcp/* | crates/shelby-memory-eval/* | \
+              crates/assistant-memory/* | crates/assistant-mcp/* | crates/assistant-memory-eval/* | \
               tests/fixtures/Contract\ Corpus-v1.json | \
               tests/fixtures/LongMemEval\ PR-v1.json | \
               tests/fixtures/Memory\ Eval\ Policy-v1.json | \
@@ -62,10 +62,17 @@ jobs:
         id: base-evaluator
         shell: bash
         run: |
-          if git -C base cat-file -e HEAD:crates/shelby-memory-eval/Cargo.toml 2>/dev/null; then
+          if git -C base cat-file -e HEAD:crates/assistant-memory-eval/Cargo.toml 2>/dev/null; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+          # A base from before ADR-0012 has the evaluator under its old name; the rename's own PR
+          # is compared with it by the renamed-evaluation gate below.
+          if git -C base cat-file -e HEAD:crates/shelby-memory-eval/Cargo.toml 2>/dev/null; then
+            echo "legacy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "legacy=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Detect evaluation-oracle changes
@@ -76,7 +83,7 @@ jobs:
           if git -C candidate diff --quiet \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}" -- \
-            crates/shelby-memory-eval \
+            crates/assistant-memory-eval \
             "tests/fixtures/Contract Corpus-v1.json" \
             "tests/fixtures/LongMemEval PR-v1.json" \
             "tests/fixtures/Memory Eval Policy-v1.json" \
@@ -93,8 +100,8 @@ jobs:
         run: |
           git clone --local --no-hardlinks candidate candidate-evaluated
           if [ "${{ steps.base-evaluator.outputs.available }}" = "true" ]; then
-            rm -rf candidate-evaluated/crates/shelby-memory-eval
-            cp -R base/crates/shelby-memory-eval candidate-evaluated/crates/shelby-memory-eval
+            rm -rf candidate-evaluated/crates/assistant-memory-eval
+            cp -R base/crates/assistant-memory-eval candidate-evaluated/crates/assistant-memory-eval
             cp "base/tests/fixtures/Contract Corpus-v1.json" "candidate-evaluated/tests/fixtures/Contract Corpus-v1.json"
             cp "base/tests/fixtures/LongMemEval PR-v1.json" "candidate-evaluated/tests/fixtures/LongMemEval PR-v1.json"
             cp "base/tests/fixtures/Memory Eval Policy-v1.json" "candidate-evaluated/tests/fixtures/Memory Eval Policy-v1.json"
@@ -133,26 +140,26 @@ jobs:
           mkdir -p .memory-eval-cache artifacts
           checksum=$(jq -r '.dataset.sha256' "${{ steps.oracle.outputs.dataset_manifest }}")
           dataset=".memory-eval-cache/$checksum.json"
-          cargo run --locked --manifest-path "${{ steps.oracle.outputs.oracle_manifest }}" -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path "${{ steps.oracle.outputs.oracle_manifest }}" -p assistant-memory-eval -- \
             fetch longmemeval-pr --cache "$dataset"
           echo "path=$dataset" >> "$GITHUB_OUTPUT"
 
       - name: Run candidate twice
         if: steps.changes.outputs.relevant == 'true'
         run: |
-          cargo run --locked --manifest-path "${{ steps.oracle.outputs.candidate_manifest }}" -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path "${{ steps.oracle.outputs.candidate_manifest }}" -p assistant-memory-eval -- \
             run --suite pr --dataset "${{ steps.candidate-dataset.outputs.path }}" \
             --policy "${{ steps.oracle.outputs.policy }}" \
             --output artifacts/candidate --code-sha "${{ github.event.pull_request.head.sha }}" \
             > artifacts/candidate.log 2>&1
-          cargo run --locked --manifest-path "${{ steps.oracle.outputs.candidate_manifest }}" -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path "${{ steps.oracle.outputs.candidate_manifest }}" -p assistant-memory-eval -- \
             run --suite pr --dataset "${{ steps.candidate-dataset.outputs.path }}" \
             --policy "${{ steps.oracle.outputs.policy }}" \
             --output artifacts/candidate-repeat --code-sha "${{ github.event.pull_request.head.sha }}" \
             > artifacts/candidate-repeat.log 2>&1
 
-      - name: Run base
-        if: steps.changes.outputs.relevant == 'true' && steps.base-evaluator.outputs.available == 'true'
+      - name: Compare with a base under its pre-rename evaluator
+        if: steps.changes.outputs.relevant == 'true' && steps.base-evaluator.outputs.legacy == 'true'
         shell: bash
         run: |
           checksum=$(jq -r '.dataset.sha256' "base/tests/fixtures/LongMemEval PR-v1.json")
@@ -160,6 +167,22 @@ jobs:
           cargo run --locked --manifest-path base/Cargo.toml -p shelby-memory-eval -- \
             fetch longmemeval-pr --cache "$dataset"
           cargo run --locked --manifest-path base/Cargo.toml -p shelby-memory-eval -- \
+            run --suite pr --dataset "$dataset" \
+            --policy "base/tests/fixtures/Memory Eval Policy-v1.json" \
+            --output artifacts/legacy-base --code-sha "${{ github.event.pull_request.base.sha }}" \
+            > artifacts/legacy-base.log 2>&1
+          node "candidate/scripts/Compare Renamed Evaluation.mjs" \
+            --base artifacts/legacy-base/results.json --candidate artifacts/candidate/results.json
+
+      - name: Run base
+        if: steps.changes.outputs.relevant == 'true' && steps.base-evaluator.outputs.available == 'true'
+        shell: bash
+        run: |
+          checksum=$(jq -r '.dataset.sha256' "base/tests/fixtures/LongMemEval PR-v1.json")
+          dataset=".memory-eval-cache/$checksum.json"
+          cargo run --locked --manifest-path base/Cargo.toml -p assistant-memory-eval -- \
+            fetch longmemeval-pr --cache "$dataset"
+          cargo run --locked --manifest-path base/Cargo.toml -p assistant-memory-eval -- \
             run --suite pr --dataset "$dataset" \
             --policy "${{ steps.oracle.outputs.policy }}" \
             --output artifacts/base --code-sha "${{ github.event.pull_request.base.sha }}" \
@@ -179,7 +202,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo run --locked --manifest-path "${{ steps.oracle.outputs.oracle_manifest }}" -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path "${{ steps.oracle.outputs.oracle_manifest }}" -p assistant-memory-eval -- \
             compare --base artifacts/base/results.json \
             --candidate artifacts/candidate/results.json \
             --candidate-repeat artifacts/candidate-repeat/results.json \
@@ -202,7 +225,7 @@ jobs:
         run: |
           checksum=$(jq -r '.dataset.sha256' "candidate/tests/fixtures/LongMemEval PR-v1.json")
           dataset=".memory-eval-cache/$checksum.json"
-          cargo run --locked --manifest-path candidate/Cargo.toml -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path candidate/Cargo.toml -p assistant-memory-eval -- \
             fetch longmemeval-pr --cache "$dataset"
           echo "path=$dataset" >> "$GITHUB_OUTPUT"
 
@@ -213,12 +236,12 @@ jobs:
           steps.oracle-changes.outputs.changed == 'true' &&
           contains(github.event.pull_request.labels.*.name, 'memory-eval/rebaseline-approved')
         run: |
-          cargo run --locked --manifest-path candidate/Cargo.toml -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path candidate/Cargo.toml -p assistant-memory-eval -- \
             run --suite pr --dataset "${{ steps.rebaseline-dataset.outputs.path }}" \
             --policy "candidate/tests/fixtures/Memory Eval Policy-v1.json" \
             --output artifacts/rebaseline-candidate --code-sha "${{ github.event.pull_request.head.sha }}" \
             > artifacts/rebaseline-candidate.log 2>&1
-          cargo run --locked --manifest-path candidate/Cargo.toml -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path candidate/Cargo.toml -p assistant-memory-eval -- \
             run --suite pr --dataset "${{ steps.rebaseline-dataset.outputs.path }}" \
             --policy "candidate/tests/fixtures/Memory Eval Policy-v1.json" \
             --output artifacts/rebaseline-candidate-repeat --code-sha "${{ github.event.pull_request.head.sha }}" \
@@ -233,7 +256,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo run --locked --manifest-path candidate/Cargo.toml -p shelby-memory-eval -- \
+          cargo run --locked --manifest-path candidate/Cargo.toml -p assistant-memory-eval -- \
             compare --base artifacts/rebaseline-candidate/results.json \
             --candidate artifacts/rebaseline-candidate/results.json \
             --candidate-repeat artifacts/rebaseline-candidate-repeat/results.json \

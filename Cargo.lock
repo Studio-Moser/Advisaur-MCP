@@ -41,6 +41,63 @@ dependencies = [
 ]
 
 [[package]]
+name = "assistant-integrations"
+version = "0.4.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+ "windows-sys",
+]
+
+[[package]]
+name = "assistant-mcp"
+version = "0.4.0"
+dependencies = [
+ "assistant-integrations",
+ "assistant-memory",
+ "axum",
+ "base64 0.22.1",
+ "hmac",
+ "jsonschema",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower",
+ "uuid",
+]
+
+[[package]]
+name = "assistant-memory"
+version = "0.4.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
+name = "assistant-memory-eval"
+version = "0.4.0"
+dependencies = [
+ "assistant-memory",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1423,63 +1480,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
-]
-
-[[package]]
-name = "shelby-integrations"
-version = "0.4.0"
-dependencies = [
- "serde_json",
- "thiserror",
- "windows-sys",
-]
-
-[[package]]
-name = "shelby-mcp"
-version = "0.4.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "hmac",
- "jsonschema",
- "rmcp",
- "serde",
- "serde_json",
- "sha2",
- "shelby-integrations",
- "shelby-memory",
- "tokio",
- "tower",
- "uuid",
-]
-
-[[package]]
-name = "shelby-memory"
-version = "0.4.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "unicode-normalization",
- "uuid",
-]
-
-[[package]]
-name = "shelby-memory-eval"
-version = "0.4.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "sha2",
- "shelby-memory",
- "thiserror",
- "uuid",
 ]
 
 [[package]]

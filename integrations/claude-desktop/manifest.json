@@ -1,21 +1,21 @@
 {
   "manifest_version": "0.4",
-  "name": "shelbymcp",
-  "display_name": "ShelbyMCP",
+  "name": "advisaur-mcp",
+  "display_name": "Advisaur MCP",
   "version": "0.4.0",
   "description": "Local knowledge-graph memory for Claude Desktop",
   "author": {
     "name": "Studio Moser",
     "url": "https://github.com/Studio-Moser"
   },
-  "homepage": "https://github.com/Studio-Moser/shelbymcp",
-  "documentation": "https://github.com/Studio-Moser/shelbymcp#readme",
-  "support": "https://github.com/Studio-Moser/shelbymcp/issues",
+  "homepage": "https://github.com/Studio-Moser/Advisaur-MCP",
+  "documentation": "https://github.com/Studio-Moser/Advisaur-MCP#readme",
+  "support": "https://github.com/Studio-Moser/Advisaur-MCP/issues",
   "server": {
     "type": "binary",
-    "entry_point": "server/shelby-mcp",
+    "entry_point": "server/advisaur-mcp",
     "mcp_config": {
-      "command": "${__dirname}/server/shelby-mcp",
+      "command": "${__dirname}/server/advisaur-mcp",
       "args": []
     }
   }

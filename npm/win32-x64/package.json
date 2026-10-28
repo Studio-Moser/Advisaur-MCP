@@ -1,8 +1,8 @@
 {
-  "name": "shelbymcp-win32-x64",
+  "name": "advisaur-mcp-win32-x64",
   "version": "0.4.0",
-  "description": "ShelbyMCP native binary for Windows x64",
+  "description": "Advisaur MCP native binary for Windows x64",
   "license": "MIT",
   "files": ["bin", "LICENSE"],
-  "repository": "github:Studio-Moser/shelbymcp"
+  "repository": "github:Studio-Moser/Advisaur-MCP"
 }

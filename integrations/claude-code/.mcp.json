@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "shelbymcp": {
+    "advisaur-mcp": {
       "command": "npx",
-      "args": ["-y", "shelbymcp"]
+      "args": ["-y", "advisaur-mcp"]
     }
   }
 }

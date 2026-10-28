@@ -1,13 +1,13 @@
 {
-  "name": "shelbymcp",
+  "name": "advisaur",
   "version": "0.4.0",
   "description": "Local knowledge-graph memory for Claude Code",
   "author": {
     "name": "Studio Moser",
     "url": "https://github.com/Studio-Moser"
   },
-  "homepage": "https://github.com/Studio-Moser/shelbymcp",
-  "repository": "https://github.com/Studio-Moser/shelbymcp",
+  "homepage": "https://github.com/Studio-Moser/Advisaur-MCP",
+  "repository": "https://github.com/Studio-Moser/Advisaur-MCP",
   "license": "MIT",
   "keywords": ["memory", "mcp", "knowledge-graph"]
 }

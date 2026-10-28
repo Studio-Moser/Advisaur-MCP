@@ -48,13 +48,13 @@ jobs:
         run: npm audit
 
       - name: Build native server
-        run: cargo build -p shelby-mcp
+        run: cargo build -p assistant-mcp
 
       - name: Verify installed npm package
-        run: node "scripts/Verify Package.mjs" --binary target/debug/shelby-mcp
+        run: node "scripts/Verify Package.mjs" --binary target/debug/advisaur-mcp
 
       - name: Assemble client packages
-        run: node "scripts/Build Integration Packages.mjs" --all --binary target/debug/shelby-mcp
+        run: node "scripts/Build Integration Packages.mjs" --all --binary target/debug/advisaur-mcp
 
       - name: Verify release policy
         run: node "scripts/Verify Release Workflow.mjs"

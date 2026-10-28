@@ -1,37 +1,37 @@
 # Architecture
 
-ShelbyMCP is one Rust implementation shared by the standalone server and future Shelby App hosts.
+Advisaur MCP is one Rust implementation shared by the standalone server and any app that embeds it.
 
 ```text
-AI client or Shelby App
+AI client or app host
         │
         ├─ stdio MCP ───────────────┐
         ├─ Streamable HTTP / OAuth ─┤
         └─ in-process Rust API ─────┤
                                     ▼
-                              shelby-mcp
+                              assistant-mcp
                                     │
                        ┌────────────┴────────────┐
                        ▼                         ▼
-             shelby-integrations          shelby-memory
+             assistant-integrations          assistant-memory
              client catalog/setup       SQLite + search + graph
 ```
 
 ## Crate boundaries
 
-### `shelby-memory`
+### `assistant-memory`
 
 Owns persistence and memory-domain behavior: migrations, thought CRUD, FTS5, optional float-vector search, temporal graph edges, project registry and aliases, scope resolution, reconciliation, trust fencing, telemetry, project repair, context selection, and brief policy. `Memory::open` migrates databases through schema v18.
 
 The committed `tests/fixtures/TypeScript-v18.sqlite` file is the compatibility boundary with installations created before the Rust cutover. The Rust cross-engine test must always open and extend it; absence is a test failure.
 
-### `shelby-integrations`
+### `assistant-integrations`
 
 Owns the seven-client catalog and safe fallback setup/status/uninstall behavior. It uses a client's supported CLI when available, otherwise performs a narrow JSON merge where that format is current. Writes are atomic, preserve existing permissions and unrelated keys, and stop for malformed files. The library never writes global rules or memory-protocol text.
 
-### `shelby-mcp`
+### `assistant-mcp`
 
-Owns the MCP boundary: static schemas and annotations for 12 tools, prompts/resources/completions/logging, stdio, Streamable HTTP, OAuth, CLI parsing, and reusable service construction. `server::ShelbyServer` and `http::router` are public so an application can host exactly the same protocol surface without launching a subprocess.
+Owns the MCP boundary: static schemas and annotations for 12 tools, prompts/resources/completions/logging, stdio, Streamable HTTP, OAuth, CLI parsing, and reusable service construction. `server::MemoryServer` and `http::router` are public so an application can host exactly the same protocol surface without launching a subprocess.
 
 ## Data and retrieval
 
@@ -49,7 +49,7 @@ Canonical project IDs are stable UUIDv5 values derived from normalized repositor
 
 Stdio is the default and reserves stdout for JSON-RPC. Streamable HTTP exposes `/mcp`, `/health`, and discovery endpoints. Local sessions are managed in-process by `rmcp`.
 
-When `SHELBY_API_KEY` is configured, every `/mcp` request requires a valid bearer token. The same secret enables OAuth authorization-server and protected-resource metadata, dynamic client registration, authorization code with S256 PKCE, and resource-bound HMAC-derived access and refresh tokens. Client registrations are stored in SQLite; authorization codes and rate-limit state are in memory. Tokens do not expire or rotate, so rotating `SHELBY_API_KEY` revokes them. When no secret is configured, OAuth endpoints return `503` and HTTP is unauthenticated.
+When `ADVISAUR_API_KEY` is configured, every `/mcp` request requires a valid bearer token. The same secret enables OAuth authorization-server and protected-resource metadata, dynamic client registration, authorization code with S256 PKCE, and resource-bound HMAC-derived access and refresh tokens. Client registrations are stored in SQLite; authorization codes and rate-limit state are in memory. Tokens do not expire or rotate, so rotating `ADVISAUR_API_KEY` revokes them. When no secret is configured, OAuth endpoints return `503` and HTTP is unauthenticated.
 
 ## Distribution
 
@@ -57,6 +57,6 @@ The root npm package is a dependency-free launcher. It maps the current OS/archi
 
 Client manifests live in `integrations/`. Assembly copies canonical skills and builds a target-labeled Claude Desktop MCPB from each explicit native binary. Release builds produce native archives, npm packages, client packages, Rust library crates, and SHA-256 checksums. Publication is disabled by default and requires the exact version tag plus approval through GitHub's `release` environment.
 
-## Shelby App reuse
+## Reuse in an app
 
-Desktop targets can host `shelby-mcp::http::router` on the app's chosen loopback port and share an `Arc<Mutex<Memory>>`. All app targets can call `shelby-memory` directly. The connections UI can use `shelby-integrations::CLIENTS` and its status/setup helpers. This preserves one memory engine and one installer catalog across the app and standalone product; iOS does not need a Node sidecar or subprocess.
+Desktop targets can host `assistant_mcp::http::router` on the app's chosen loopback port and share an `Arc<Mutex<Memory>>`. All app targets can call `assistant-memory` directly. The connections UI can use `assistant-integrations::CLIENTS` and its status/setup helpers. This preserves one memory engine and one installer catalog across the app and standalone product; iOS does not need a Node sidecar or subprocess.

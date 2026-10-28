@@ -1,16 +1,16 @@
 {
-  "name": "shelbymcp",
+  "name": "advisaur-mcp",
   "version": "0.4.0",
   "distribution": "Devin MCP Marketplace",
   "installation": "Settings > MCP Marketplace > Add Your Own",
   "defaultConfiguration": {
     "transport": "STDIO",
     "command": "npx",
-    "args": ["-y", "shelbymcp"]
+    "args": ["-y", "advisaur-mcp"]
   },
   "compatibility": {
     "clientAlias": "windsurf",
-    "command": "shelby-mcp setup windsurf",
+    "command": "advisaur-mcp setup windsurf",
     "note": "The windsurf command configures only the legacy local Windsurf client."
   }
 }

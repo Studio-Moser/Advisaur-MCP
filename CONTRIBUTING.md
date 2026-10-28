@@ -1,4 +1,4 @@
-# Contributing to ShelbyMCP
+# Contributing to Advisaur MCP
 
 Open an issue before a substantial change so the behavior and compatibility contract can be agreed before implementation.
 
@@ -7,8 +7,8 @@ Open an issue before a substantial change so the behavior and compatibility cont
 Install stable Rust and Node.js 20 or newer, then run:
 
 ```bash
-git clone https://github.com/Studio-Moser/shelbymcp.git
-cd shelbymcp
+git clone https://github.com/Studio-Moser/Advisaur-MCP.git
+cd Advisaur-MCP
 npm ci
 cargo test --workspace
 npm test

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { launch, resolveBinary, selectPackage } from "../bin/shelbymcp.js";
+import { launch, resolveBinary, selectPackage } from "../bin/advisaur-mcp.js";
 
 const mappings = [
-  ["darwin", "arm64", "shelbymcp-darwin-arm64", "shelby-mcp"],
-  ["darwin", "x64", "shelbymcp-darwin-x64", "shelby-mcp"],
-  ["linux", "arm64", "shelbymcp-linux-arm64", "shelby-mcp"],
-  ["linux", "x64", "shelbymcp-linux-x64", "shelby-mcp"],
-  ["win32", "x64", "shelbymcp-win32-x64", "shelby-mcp.exe"],
+  ["darwin", "arm64", "advisaur-mcp-darwin-arm64", "advisaur-mcp"],
+  ["darwin", "x64", "advisaur-mcp-darwin-x64", "advisaur-mcp"],
+  ["linux", "arm64", "advisaur-mcp-linux-arm64", "advisaur-mcp"],
+  ["linux", "x64", "advisaur-mcp-linux-x64", "advisaur-mcp"],
+  ["win32", "x64", "advisaur-mcp-win32-x64", "advisaur-mcp.exe"],
 ];
 
 test("maps every supported platform and architecture", () => {
@@ -30,10 +30,10 @@ test("resolves the executable beside the platform package manifest", () => {
 
 test("reports a missing optional platform package", () => {
   assert.throws(
-    () => resolveBinary("shelbymcp-linux-x64", () => {
+    () => resolveBinary("advisaur-mcp-linux-x64", () => {
       throw Object.assign(new Error("not found"), { code: "MODULE_NOT_FOUND" });
     }, "linux"),
-    /npm install did not include shelbymcp-linux-x64/,
+    /npm install did not include advisaur-mcp-linux-x64/,
   );
 });
 
@@ -42,7 +42,7 @@ test("forwards arguments without a shell and propagates the exit status", () => 
   const status = launch(["serve", "--verbose"], {
     platform: "darwin",
     arch: "arm64",
-    resolve: () => "/modules/shelbymcp-darwin-arm64/package.json",
+    resolve: () => "/modules/advisaur-mcp-darwin-arm64/package.json",
     spawnSync(binary, argv, options) {
       spawnCall = { binary, argv, options };
       return { status: 7, signal: null };
@@ -50,7 +50,7 @@ test("forwards arguments without a shell and propagates the exit status", () => 
   });
 
   assert.deepEqual(spawnCall, {
-    binary: "/modules/shelbymcp-darwin-arm64/bin/shelby-mcp",
+    binary: "/modules/advisaur-mcp-darwin-arm64/bin/advisaur-mcp",
     argv: ["serve", "--verbose"],
     options: { stdio: "inherit", shell: false },
   });
@@ -61,7 +61,7 @@ test("converts a terminating signal to the conventional exit status", () => {
   assert.equal(launch([], {
     platform: "linux",
     arch: "x64",
-    resolve: () => "/modules/shelbymcp-linux-x64/package.json",
+    resolve: () => "/modules/advisaur-mcp-linux-x64/package.json",
     spawnSync: () => ({ status: null, signal: "SIGTERM" }),
     signalNumbers: { SIGTERM: 15 },
   }), 143);
@@ -72,7 +72,7 @@ test("reports spawn failures and returns one", () => {
   assert.equal(launch([], {
     platform: "linux",
     arch: "x64",
-    resolve: () => "/modules/shelbymcp-linux-x64/package.json",
+    resolve: () => "/modules/advisaur-mcp-linux-x64/package.json",
     spawnSync: () => ({ error: new Error("cannot execute"), status: null, signal: null }),
     writeError: (message) => errors.push(message),
   }), 1);
