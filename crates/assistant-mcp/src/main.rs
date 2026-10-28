@@ -78,7 +78,8 @@ fn print_change(client: Client, change: Change) -> i32 {
         }
         Change::AlreadyConfigured { path } => {
             println!(
-                "ShelbyMCP is already configured for {} at {}",
+                "{} is already configured for {} at {}",
+                assistant_memory::brand::DISPLAY_NAME,
                 client.info().display_name,
                 path.display()
             );
@@ -86,7 +87,8 @@ fn print_change(client: Client, change: Change) -> i32 {
         }
         Change::AlreadyAbsent { path } => {
             println!(
-                "ShelbyMCP is already absent for {} at {}",
+                "{} is already absent for {} at {}",
+                assistant_memory::brand::DISPLAY_NAME,
                 client.info().display_name,
                 path.display()
             );
@@ -142,9 +144,9 @@ fn run_uninstall(client: Option<String>) -> i32 {
 }
 
 fn run_repair(apply: bool) -> i32 {
-    let path = std::env::var("SHELBY_DB_PATH")
+    let path = config::env_var(config::DB_PATH_ENV)
         .map(|path| config::resolve_db_path(&path))
-        .unwrap_or_else(|_| config::default_db_path());
+        .unwrap_or_else(config::default_db_path);
     let mut memory = match open_memory(&path) {
         Ok(memory) => memory,
         Err(error) => {
@@ -162,6 +164,33 @@ fn run_repair(apply: bool) -> i32 {
             eprintln!("[ERROR] {error}");
             1
         }
+    }
+}
+
+/// Moves the old data folder to the renamed one (ADR-0012 D6) when the server is about to use
+/// its default database, and points the database there. A path given by flag or variable is the
+/// user's to keep, so nothing moves then.
+fn adopt_data_dir(cli: Cli) -> Cli {
+    let uses_default = match &cli {
+        Cli::Serve(cfg) => cfg.db_path == config::default_db_path(),
+        Cli::RepairProjects { .. } => {
+            std::env::var_os(config::DB_PATH_ENV.0).is_none()
+                && std::env::var_os(config::DB_PATH_ENV.1).is_none()
+        }
+        _ => false,
+    };
+    if !uses_default {
+        return cli;
+    }
+    if let Some(message) = assistant_memory::brand::move_legacy_data_dir(&config::home_dir()) {
+        eprintln!("[WARN] {message}");
+    }
+    match cli {
+        Cli::Serve(mut cfg) => {
+            cfg.db_path = config::default_db_path();
+            Cli::Serve(cfg)
+        }
+        other => other,
     }
 }
 
@@ -195,7 +224,10 @@ async fn run_server(cfg: config::ServeConfig) -> i32 {
             return 1;
         }
     };
-    eprintln!("[INFO] advisaur-mcp running on stdio");
+    eprintln!(
+        "[INFO] {} running on stdio",
+        assistant_memory::brand::SERVER_NAME
+    );
     let _ = service.waiting().await;
     0
 }
@@ -204,17 +236,18 @@ async fn run() -> i32 {
     let cli = match parse_args(std::env::args().skip(1).collect()) {
         Ok(cli) => cli,
         Err(message) => {
-            eprintln!("[ERROR] {message}\n\n{}", config::HELP);
+            eprintln!("[ERROR] {message}\n\n{}", config::help());
             return 1;
         }
     };
+    let cli = adopt_data_dir(cli);
     match cli {
         Cli::Version => {
-            println!("advisaur-mcp v{VERSION}");
+            println!("{} v{VERSION}", assistant_memory::brand::SERVER_NAME);
             0
         }
         Cli::Help => {
-            print!("{}", config::HELP);
+            print!("{}", config::help());
             0
         }
         Cli::Setup {

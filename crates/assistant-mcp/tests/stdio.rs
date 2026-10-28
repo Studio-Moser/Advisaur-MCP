@@ -77,7 +77,7 @@ impl Drop for Client {
 fn full_handshake_tools_prompts_and_scoped_capture() {
     let mut c = Client::spawn();
     let init = c.request("initialize", json!({ "protocolVersion": "2025-06-18", "capabilities": { "roots": { "listChanged": true } }, "clientInfo": { "name": "test", "version": "0" } }));
-    assert_eq!(init["serverInfo"]["name"], "shelbymcp");
+    assert_eq!(init["serverInfo"]["name"], "advisaur-mcp");
     let instructions = init["instructions"].as_str().expect("server instructions");
     assert!(instructions.chars().count() > 512);
     let prefix: String = instructions.chars().take(512).collect();
@@ -118,7 +118,7 @@ fn full_handshake_tools_prompts_and_scoped_capture() {
             .contains("capture_thought")
     );
 
-    let res = c.request("resources/read", json!({ "uri": "shelbymcp://status" }));
+    let res = c.request("resources/read", json!({ "uri": "advisaur-mcp://status" }));
     assert!(
         res["contents"][0]["text"]
             .as_str()

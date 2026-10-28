@@ -1,6 +1,6 @@
 //! CLI flags and environment, preserving the pre-0.4 CLI contract so existing
-//! launch configs (`SHELBY_DB_PATH`, `--db`, `--transport http`, `PORT`, `HOST`,
-//! `SHELBY_API_KEY`) keep working unchanged.
+//! launch configs (`--db`, `--transport http`, `PORT`, `HOST`, and the variables in
+//! `DB_PATH_ENV`, `TRANSPORT_ENV` and `API_KEY_ENV`, under either name) keep working.
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,23 +41,60 @@ pub enum Cli {
     },
 }
 
-pub const HELP: &str = "advisaur-mcp — Knowledge-graph memory for AI tools
+/// The server's environment variables (ADR-0012 D4), each with the name it had before the
+/// rename, which is still read for one release, with a warning.
+pub const DB_PATH_ENV: (&str, &str) = (
+    concat!(assistant_memory::product_env!(), "_DB_PATH"),
+    "SHELBY_DB_PATH",
+);
+pub const TRANSPORT_ENV: (&str, &str) = (
+    concat!(assistant_memory::product_env!(), "_TRANSPORT"),
+    "SHELBY_TRANSPORT",
+);
+pub const API_KEY_ENV: (&str, &str) = (
+    concat!(assistant_memory::product_env!(), "_API_KEY"),
+    "SHELBY_API_KEY",
+);
+
+/// A variable under its current name, or its old one, with a warning.
+fn env_or_legacy(
+    env: &dyn Fn(&str) -> Option<String>,
+    (name, legacy): (&str, &str),
+) -> Option<String> {
+    env(name).or_else(|| {
+        let value = env(legacy)?;
+        eprintln!("[WARN] {legacy} is deprecated; use {name}");
+        Some(value)
+    })
+}
+
+pub fn env_var(names: (&str, &str)) -> Option<String> {
+    env_or_legacy(&|k| std::env::var(k).ok(), names)
+}
+
+pub fn help() -> String {
+    let bin = assistant_memory::brand::SERVER_NAME;
+    let display = assistant_memory::brand::DISPLAY_NAME;
+    let dir = assistant_memory::brand::DATA_DIR_NAME;
+    let (db, transport, api_key) = (DB_PATH_ENV.0, TRANSPORT_ENV.0, API_KEY_ENV.0);
+    format!(
+        "{bin} — Knowledge-graph memory for AI tools
 
 Usage:
-  advisaur-mcp                   Start the MCP server (stdio)
-  advisaur-mcp --transport http  Start the streamable HTTP server (default 0.0.0.0:3100/mcp)
-  advisaur-mcp setup <client>     Configure a client fallback
-  advisaur-mcp uninstall <client> Remove the ShelbyMCP client entry
-  advisaur-mcp protocol           Print the Memory Protocol
-  advisaur-mcp forage             Print the Forage skill
-  advisaur-mcp onboard            Print the onboarding skill
-  advisaur-mcp migrate            Print the migration prompt
-  advisaur-mcp repair-projects    Preview project identity repairs
-  advisaur-mcp help              Show this help
+  {bin}                   Start the MCP server (stdio)
+  {bin} --transport http  Start the streamable HTTP server (default 0.0.0.0:3100/mcp)
+  {bin} setup <client>     Configure a client fallback
+  {bin} uninstall <client> Remove the {display} client entry
+  {bin} protocol           Print the Memory Protocol
+  {bin} forage             Print the Forage skill
+  {bin} onboard            Print the onboarding skill
+  {bin} migrate            Print the migration prompt
+  {bin} repair-projects    Preview project identity repairs
+  {bin} help              Show this help
 
 Flags:
-  --db <path>        Database path (default: ~/.shelbymcp/memory.db; env SHELBY_DB_PATH)
-  --transport <t>    stdio | http (env SHELBY_TRANSPORT)
+  --db <path>        Database path (default: ~/{dir}/memory.db; env {db})
+  --transport <t>    stdio | http (env {transport})
   --port <n>         HTTP port (env PORT, default 3100)
   --host <h>         HTTP bind host (env HOST; default 0.0.0.0 for http)
   --verbose          Enable verbose logging
@@ -70,8 +107,10 @@ Command flags:
                      Apply high-confidence repairs and flag the rest
 
 Environment:
-  SHELBY_API_KEY     Bearer token required on /mcp when set
-";
+  {api_key}   Bearer token required on /mcp when set
+"
+    )
+}
 
 pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -81,7 +120,7 @@ pub fn home_dir() -> PathBuf {
 }
 
 pub fn default_db_dir() -> PathBuf {
-    home_dir().join(".shelbymcp")
+    assistant_memory::brand::data_dir(&home_dir())
 }
 
 pub fn default_db_path() -> String {
@@ -136,9 +175,9 @@ pub fn parse_with_env(
         }
         _ => {}
     }
-    let env_transport = env("SHELBY_TRANSPORT");
+    let env_transport = env_or_legacy(env, TRANSPORT_ENV);
     let mut cfg = ServeConfig {
-        db_path: env("SHELBY_DB_PATH")
+        db_path: env_or_legacy(env, DB_PATH_ENV)
             .map(|p| resolve_db_path(&p))
             .unwrap_or_else(default_db_path),
         verbose: false,
@@ -149,7 +188,7 @@ pub fn parse_with_env(
         },
         http_port: env("PORT").and_then(|p| p.parse().ok()).unwrap_or(3100),
         http_host: env("HOST").unwrap_or_else(|| "127.0.0.1".into()),
-        api_key: env("SHELBY_API_KEY"),
+        api_key: env_or_legacy(env, API_KEY_ENV),
     };
     let mut explicit_host = false;
     let mut i = 0;
@@ -210,7 +249,7 @@ mod tests {
         let Cli::Serve(c) = parse_with_env(vec![], &no_env).unwrap() else {
             panic!()
         };
-        assert!(c.db_path.ends_with(".shelbymcp/memory.db"));
+        assert_eq!(c.db_path, default_db_path());
         assert_eq!(
             (c.transport, c.http_port, c.http_host.as_str()),
             (Transport::Stdio, 3100, "127.0.0.1")
@@ -288,9 +327,9 @@ mod tests {
     #[test]
     fn env_provides_defaults_and_flags_override() {
         let env = |k: &str| match k {
-            "SHELBY_TRANSPORT" => Some("http".to_string()),
+            "ADVISAUR_TRANSPORT" => Some("http".to_string()),
             "HOST" => Some("10.0.0.5".to_string()),
-            "SHELBY_API_KEY" => Some("k".to_string()),
+            "SHELBY_API_KEY" => Some("k".to_string()), // the old name still reads
             _ => None,
         };
         let Cli::Serve(c) = parse_with_env(vec![], &env).unwrap() else {

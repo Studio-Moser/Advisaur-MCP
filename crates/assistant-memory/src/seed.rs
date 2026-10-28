@@ -1,4 +1,4 @@
-//! Per-user project seed (ADR 0001 §1b.5): `~/.shelbymcp/projects.seed.json`,
+//! Per-user project seed (ADR 0001 §1b.5): `projects.seed.json` in the data folder,
 //! empty by default, strict whole-file validation.
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -29,7 +29,7 @@ pub fn seed_default_path() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    home.join(".shelbymcp").join("projects.seed.json")
+    crate::brand::data_dir(&home).join("projects.seed.json")
 }
 
 fn string_array(v: Option<&Value>) -> Option<Vec<String>> {

@@ -2135,7 +2135,7 @@ mod tests {
         assert_eq!(c["matched_count"], 1);
         let doc = c["document"].as_str().unwrap();
         assert!(
-            doc.contains("## Shelby memory context")
+            doc.contains("## Advisaur memory context")
                 && doc.contains("## Selected Context (1 thought)")
                 && doc.contains("Total: 1 thought")
         );

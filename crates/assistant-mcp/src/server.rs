@@ -18,7 +18,7 @@ use crate::{VERSION, prompts::PROMPTS, schemas};
 
 pub type SharedMemory = Arc<Mutex<Memory>>;
 
-/// Seed the registry from `~/.shelbymcp/projects.seed.json` (empty by default).
+/// Seed the registry from `projects.seed.json` in the data folder (empty by default).
 pub fn seed_registry(memory: &SharedMemory) {
     let seed = assistant_memory::seed::load_seed(&assistant_memory::seed::seed_default_path());
     let projects = assistant_memory::seed::to_registry_seeds(&seed);
@@ -195,8 +195,8 @@ impl ServerHandler for MemoryServer {
             .enable_completions()
             .build();
         let mut info = ServerInfo::new(capabilities);
-        let mut implementation = Implementation::new("shelbymcp", VERSION);
-        implementation.title = Some("Shelby MCP".into());
+        let mut implementation = Implementation::new(assistant_memory::brand::SERVER_NAME, VERSION);
+        implementation.title = Some(assistant_memory::brand::SERVER_TITLE.into());
         info.server_info = implementation;
         info.instructions = Some(crate::prompts::INITIALIZATION_INSTRUCTIONS.into());
         info
@@ -265,8 +265,11 @@ impl ServerHandler for MemoryServer {
         _request: Option<PaginatedRequestParams>,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
-        let mut resource = Resource::new("shelbymcp://status", "status");
-        resource.description = Some("ShelbyMCP server status".into());
+        let mut resource = Resource::new(assistant_memory::brand::STATUS_URI, "status");
+        resource.description = Some(format!(
+            "{} server status",
+            assistant_memory::brand::DISPLAY_NAME
+        ));
         resource.mime_type = Some("application/json".into());
         Ok(ListResourcesResult::with_all_items(vec![resource]))
     }
@@ -276,7 +279,7 @@ impl ServerHandler for MemoryServer {
         request: ReadResourceRequestParams,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        if request.uri != "shelbymcp://status" {
+        if request.uri != assistant_memory::brand::STATUS_URI {
             return Err(ErrorData::resource_not_found(
                 format!("unknown resource: {}", request.uri),
                 None,

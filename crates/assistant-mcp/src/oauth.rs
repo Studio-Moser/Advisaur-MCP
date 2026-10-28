@@ -295,7 +295,7 @@ fn render_form(client_name: &str, q: &AuthorizeQuery, error: Option<&str>) -> St
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shelby — Authorize</title>
+  <title>{product} — Authorize</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ background: #0d0d0d; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }}
@@ -313,7 +313,7 @@ fn render_form(client_name: &str, q: &AuthorizeQuery, error: Option<&str>) -> St
 </head>
 <body>
   <div class="card">
-    <div class="wordmark">Shelby</div>
+    <div class="wordmark">{product}</div>
     <div class="tagline"><span class="client">{client}</span> is requesting access to your memory.</div>
     <form method="POST">
       <input type="hidden" name="client_id" value="{client_id}">
@@ -324,13 +324,14 @@ fn render_form(client_name: &str, q: &AuthorizeQuery, error: Option<&str>) -> St
       <input type="hidden" name="redirect_uri" value="{redirect_uri}">
       <input type="hidden" name="state" value="{state}">
       <label for="api_key">API Key</label>
-      <input type="password" id="api_key" name="api_key" placeholder="Enter your Shelby API key" autofocus required>
+      <input type="password" id="api_key" name="api_key" placeholder="Enter your {product} API key" autofocus required>
       {error_html}
       <button type="submit">Approve</button>
     </form>
   </div>
 </body>
 </html>"#,
+        product = assistant_memory::brand::PRODUCT_NAME,
         client = esc(client_name),
         client_id = esc(&q.client_id),
         response_type = esc(&q.response_type),
@@ -586,7 +587,7 @@ async fn token(
     }
 }
 
-/// Routes mounted at the root when `SHELBY_API_KEY` is set.
+/// Routes mounted at the root when the API key (`config::API_KEY_ENV`) is set.
 pub fn router(state: OAuthState) -> Router {
     Router::new()
         .route("/.well-known/oauth-authorization-server", get(metadata))

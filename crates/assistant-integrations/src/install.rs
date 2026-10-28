@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::catalog::Client;
 use crate::config::{
-    IntegrationError, JsonChange, JsonStatus, Result, json_status, merge_json, remove_json,
+    DISPLAY_NAME, IntegrationError, JsonChange, JsonStatus, Keys, LEGACY_SERVER_KEY, Result,
+    SERVER_KEY, json_keys, json_status, merge_json, remove_json,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,19 +63,41 @@ fn json_client(client: Client) -> bool {
     !matches!(client, Client::Codex)
 }
 
-fn codex_status(path: &Path) -> Result<IntegrationStatus> {
+/// The server's keys in Codex's TOML config, under the current name or the old one.
+fn codex_keys(path: &Path) -> Result<Keys> {
     if !path.exists() {
-        return Ok(IntegrationStatus::NotConfigured {
-            path: path.to_path_buf(),
+        return Ok(Keys {
+            current: false,
+            legacy: false,
         });
     }
     let content = fs::read_to_string(path).map_err(|source| IntegrationError::Filesystem {
         path: path.to_path_buf(),
         source,
     })?;
-    let configured = content
-        .lines()
-        .any(|line| line.trim() == "[mcp_servers.shelbymcp]");
+    let has = |key: &str| {
+        content.lines().any(|line| {
+            let line = line.trim();
+            line == format!("[mcp_servers.{key}]") || line == format!("[mcp_servers.\"{key}\"]")
+        })
+    };
+    Ok(Keys {
+        current: has(SERVER_KEY),
+        legacy: has(LEGACY_SERVER_KEY),
+    })
+}
+
+/// The server's keys in a client's config, or what the user must fix first.
+fn configured_keys(client: Client, path: &Path) -> Result<std::result::Result<Keys, String>> {
+    if json_client(client) {
+        json_keys(path)
+    } else {
+        codex_keys(path).map(Ok)
+    }
+}
+
+fn codex_status(path: &Path) -> Result<IntegrationStatus> {
+    let configured = codex_keys(path)?.any();
     Ok(if configured {
         IntegrationStatus::Configured {
             path: path.to_path_buf(),
@@ -103,62 +126,65 @@ pub fn status(client: Client, paths: &IntegrationPaths) -> Result<IntegrationSta
     })
 }
 
-fn portable_entry_for(is_windows: bool) -> serde_json::Value {
+/// The entry that launches `package` from npm.
+fn portable_entry_for(is_windows: bool, package: &str) -> serde_json::Value {
     if is_windows {
-        json!({ "command": "cmd", "args": ["/c", "npx", "-y", "shelbymcp"] })
+        json!({ "command": "cmd", "args": ["/c", "npx", "-y", package] })
     } else {
-        json!({ "command": "npx", "args": ["-y", "shelbymcp"] })
+        json!({ "command": "npx", "args": ["-y", package] })
     }
 }
 
 fn portable_entry() -> serde_json::Value {
-    portable_entry_for(cfg!(windows))
+    portable_entry_for(cfg!(windows), SERVER_KEY)
 }
 
-fn setup_command(client: Client) -> Option<(&'static str, &'static [&'static str])> {
+/// The entries the old setup wrote, which setup replaces rather than keeps.
+fn legacy_portable_entries() -> [serde_json::Value; 2] {
+    [false, true].map(|windows| portable_entry_for(windows, LEGACY_SERVER_KEY))
+}
+
+fn setup_command(client: Client) -> Option<(&'static str, Vec<&'static str>)> {
     match client {
         Client::ClaudeCode => Some((
             "claude",
-            &[
+            vec![
                 "mcp",
                 "add",
                 "--scope",
                 "user",
                 "--transport",
                 "stdio",
-                "shelbymcp",
+                SERVER_KEY,
                 "--",
                 "npx",
                 "-y",
-                "shelbymcp",
+                SERVER_KEY,
             ],
         )),
         Client::Codex => Some((
             "codex",
-            &["mcp", "add", "shelbymcp", "--", "npx", "-y", "shelbymcp"],
+            vec!["mcp", "add", SERVER_KEY, "--", "npx", "-y", SERVER_KEY],
         )),
         Client::Gemini => Some((
             "gemini",
-            &[
-                "mcp",
-                "add",
-                "--scope",
-                "user",
-                "shelbymcp",
-                "npx",
-                "-y",
-                "shelbymcp",
+            vec![
+                "mcp", "add", "--scope", "user", SERVER_KEY, "npx", "-y", SERVER_KEY,
             ],
         )),
         _ => None,
     }
 }
 
-fn uninstall_command(client: Client) -> Option<(&'static str, &'static [&'static str])> {
+/// The client CLI command that removes the server's entry under `key`.
+fn uninstall_command(
+    client: Client,
+    key: &'static str,
+) -> Option<(&'static str, Vec<&'static str>)> {
     match client {
-        Client::ClaudeCode => Some(("claude", &["mcp", "remove", "shelbymcp"])),
-        Client::Codex => Some(("codex", &["mcp", "remove", "shelbymcp"])),
-        Client::Gemini => Some(("gemini", &["mcp", "remove", "--scope", "user", "shelbymcp"])),
+        Client::ClaudeCode => Some(("claude", vec!["mcp", "remove", key])),
+        Client::Codex => Some(("codex", vec!["mcp", "remove", key])),
+        Client::Gemini => Some(("gemini", vec!["mcp", "remove", "--scope", "user", key])),
         _ => None,
     }
 }
@@ -184,7 +210,7 @@ fn changed(path: PathBuf, message: impl Into<String>) -> Change {
 
 fn from_json_change(change: JsonChange, path: PathBuf, action: &str) -> Change {
     match change {
-        JsonChange::Changed => changed(path, format!("ShelbyMCP {action}")),
+        JsonChange::Changed => changed(path, format!("{DISPLAY_NAME} {action}")),
         JsonChange::AlreadyConfigured => Change::AlreadyConfigured { path },
         JsonChange::AlreadyAbsent => Change::AlreadyAbsent { path },
         JsonChange::ManualAction(message) => Change::ManualAction { message },
@@ -202,20 +228,29 @@ pub fn setup(
                 .into(),
         });
     };
-    match status(client, paths)? {
-        IntegrationStatus::Configured { .. } => {
-            return Ok(Change::AlreadyConfigured { path });
-        }
-        IntegrationStatus::ManualAction { message } => {
-            return Ok(Change::ManualAction { message });
-        }
-        IntegrationStatus::NotConfigured { .. } => {}
+    let keys = match configured_keys(client, &path)? {
+        Ok(keys) => keys,
+        Err(message) => return Ok(Change::ManualAction { message }),
+    };
+    if keys.current && !keys.legacy {
+        return Ok(Change::AlreadyConfigured { path });
     }
 
     if let Some((program, args)) = setup_command(client) {
         if let Some(executable) = runner.resolve(program) {
-            run_command(runner, &executable, args)?;
-            return Ok(changed(path, format!("ShelbyMCP added with {program}")));
+            if !keys.current {
+                run_command(runner, &executable, &args)?;
+            }
+            // The old entry goes, so the client doesn't run two servers.
+            if keys.legacy
+                && let Some((_, remove)) = uninstall_command(client, LEGACY_SERVER_KEY)
+            {
+                run_command(runner, &executable, &remove)?;
+            }
+            return Ok(changed(
+                path,
+                format!("{DISPLAY_NAME} added with {program}"),
+            ));
         }
         if client != Client::Gemini {
             return Ok(Change::ManualAction {
@@ -229,7 +264,7 @@ pub fn setup(
     }
 
     Ok(from_json_change(
-        merge_json(&path, portable_entry())?,
+        merge_json(&path, portable_entry(), &legacy_portable_entries())?,
         path,
         "configured",
     ))
@@ -242,26 +277,33 @@ pub fn uninstall(
 ) -> Result<Change> {
     let Some(path) = config_path(client, paths) else {
         return Ok(Change::ManualAction {
-            message: "Remove ShelbyMCP from Devin in Settings > MCP Marketplace".into(),
+            message: format!("Remove {DISPLAY_NAME} from Devin in Settings > MCP Marketplace"),
         });
     };
-    match status(client, paths)? {
-        IntegrationStatus::NotConfigured { .. } => return Ok(Change::AlreadyAbsent { path }),
-        IntegrationStatus::ManualAction { message } => {
-            return Ok(Change::ManualAction { message });
-        }
-        IntegrationStatus::Configured { .. } => {}
+    let keys = match configured_keys(client, &path)? {
+        Ok(keys) => keys,
+        Err(message) => return Ok(Change::ManualAction { message }),
+    };
+    if !keys.any() {
+        return Ok(Change::AlreadyAbsent { path });
     }
 
-    if let Some((program, args)) = uninstall_command(client) {
+    if let Some((program, _)) = uninstall_command(client, SERVER_KEY) {
         if let Some(executable) = runner.resolve(program) {
-            run_command(runner, &executable, args)?;
-            return Ok(changed(path, format!("ShelbyMCP removed with {program}")));
+            for (present, key) in [(keys.current, SERVER_KEY), (keys.legacy, LEGACY_SERVER_KEY)] {
+                if present && let Some((_, args)) = uninstall_command(client, key) {
+                    run_command(runner, &executable, &args)?;
+                }
+            }
+            return Ok(changed(
+                path,
+                format!("{DISPLAY_NAME} removed with {program}"),
+            ));
         }
         if client != Client::Gemini {
             return Ok(Change::ManualAction {
                 message: format!(
-                    "{} CLI is unavailable; remove the ShelbyMCP integration manually",
+                    "{} CLI is unavailable; remove the {DISPLAY_NAME} integration manually",
                     client.info().display_name
                 ),
             });
@@ -290,8 +332,10 @@ mod tests {
     impl TempHome {
         fn new() -> Self {
             let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir()
-                .join(format!("shelby-integrations-{}-{id}", std::process::id()));
+            let path = std::env::temp_dir().join(format!(
+                "assistant-integrations-{}-{id}",
+                std::process::id()
+            ));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -392,10 +436,10 @@ mod tests {
         let configured = read_json(&path);
         assert_eq!(configured["theme"], "dark");
         assert_eq!(configured["mcpServers"]["other"]["command"], "other");
-        assert_eq!(configured["mcpServers"]["shelbymcp"]["command"], "npx");
+        assert_eq!(configured["mcpServers"]["advisaur-mcp"]["command"], "npx");
         assert_eq!(
-            configured["mcpServers"]["shelbymcp"]["args"],
-            json!(["-y", "shelbymcp"])
+            configured["mcpServers"]["advisaur-mcp"]["args"],
+            json!(["-y", "advisaur-mcp"])
         );
 
         assert!(matches!(
@@ -405,7 +449,7 @@ mod tests {
         let removed = read_json(&path);
         assert_eq!(removed["theme"], "dark");
         assert_eq!(removed["mcpServers"]["other"]["command"], "other");
-        assert!(removed["mcpServers"].get("shelbymcp").is_none());
+        assert!(removed["mcpServers"].get("advisaur-mcp").is_none());
     }
 
     #[test]
@@ -485,17 +529,25 @@ mod tests {
                     "user",
                     "--transport",
                     "stdio",
-                    "shelbymcp",
+                    "advisaur-mcp",
                     "--",
                     "npx",
                     "-y",
-                    "shelbymcp",
+                    "advisaur-mcp",
                 ],
             ),
             (
                 Client::Codex,
                 "codex",
-                vec!["mcp", "add", "shelbymcp", "--", "npx", "-y", "shelbymcp"],
+                vec![
+                    "mcp",
+                    "add",
+                    "advisaur-mcp",
+                    "--",
+                    "npx",
+                    "-y",
+                    "advisaur-mcp",
+                ],
             ),
             (
                 Client::Gemini,
@@ -505,10 +557,10 @@ mod tests {
                     "add",
                     "--scope",
                     "user",
-                    "shelbymcp",
+                    "advisaur-mcp",
                     "npx",
                     "-y",
-                    "shelbymcp",
+                    "advisaur-mcp",
                 ],
             ),
         ];
@@ -569,7 +621,7 @@ mod tests {
             ".claude/CLAUDE.md",
             ".codex/AGENTS.md",
             ".gemini/GEMINI.md",
-            ".cursor/rules/shelbymcp.mdc",
+            ".cursor/rules/advisaur-mcp.mdc",
             ".codeium/windsurf/memories/global_rules.md",
         ] {
             assert!(!home.0.join(forbidden).exists(), "wrote {forbidden}");
@@ -592,7 +644,7 @@ mod tests {
 
         assert!(matches!(result, Change::Changed { .. }));
         assert_eq!(
-            read_json(&home.0.join(".codeium/windsurf/mcp_config.json"))["mcpServers"]["shelbymcp"]
+            read_json(&home.0.join(".codeium/windsurf/mcp_config.json"))["mcpServers"]["advisaur-mcp"]
                 ["command"],
             "npx"
         );
@@ -601,12 +653,112 @@ mod tests {
     #[test]
     fn windows_json_fallback_wraps_the_npm_shim_without_shell_interpolation() {
         assert_eq!(
-            portable_entry_for(true),
-            json!({ "command": "cmd", "args": ["/c", "npx", "-y", "shelbymcp"] })
+            portable_entry_for(true, SERVER_KEY),
+            json!({ "command": "cmd", "args": ["/c", "npx", "-y", "advisaur-mcp"] })
         );
         assert_eq!(
-            portable_entry_for(false),
-            json!({ "command": "npx", "args": ["-y", "shelbymcp"] })
+            portable_entry_for(false, SERVER_KEY),
+            json!({ "command": "npx", "args": ["-y", "advisaur-mcp"] })
+        );
+    }
+
+    #[test]
+    fn setup_replaces_the_old_stock_entry_and_uninstall_removes_either() {
+        let home = TempHome::new();
+        let path = cursor_path(&home);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let old = portable_entry_for(cfg!(windows), LEGACY_SERVER_KEY);
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": old } })).unwrap(),
+        )
+        .unwrap();
+        let runner = FakeRunner::default();
+
+        assert!(matches!(
+            status(Client::Cursor, &home.paths()).unwrap(),
+            IntegrationStatus::Configured { .. }
+        ));
+        assert!(matches!(
+            setup(Client::Cursor, &home.paths(), &runner).unwrap(),
+            Change::Changed { .. }
+        ));
+        let configured = read_json(&path);
+        assert!(configured["mcpServers"].get("shelbymcp").is_none());
+        assert_eq!(configured["mcpServers"]["advisaur-mcp"], portable_entry());
+
+        // Both keys present: uninstall takes both.
+        let mut both = configured.clone();
+        both["mcpServers"]["shelbymcp"] = json!({ "command": "npx" });
+        fs::write(&path, serde_json::to_vec(&both).unwrap()).unwrap();
+        assert!(matches!(
+            uninstall(Client::Cursor, &home.paths(), &runner).unwrap(),
+            Change::Changed { .. }
+        ));
+        assert_eq!(read_json(&path)["mcpServers"], json!({}));
+    }
+
+    #[test]
+    fn a_command_the_user_wrote_under_the_old_key_moves_to_the_new_one() {
+        let home = TempHome::new();
+        let path = cursor_path(&home);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let own =
+            json!({ "command": "/opt/memory/shelby-mcp", "args": ["--db", "/data/memory.db"] });
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": own.clone() } })).unwrap(),
+        )
+        .unwrap();
+        setup(Client::Cursor, &home.paths(), &FakeRunner::default()).unwrap();
+        let configured = read_json(&path);
+        assert_eq!(configured["mcpServers"]["advisaur-mcp"], own);
+        assert!(configured["mcpServers"].get("shelbymcp").is_none());
+    }
+
+    #[test]
+    fn client_clis_add_the_new_entry_and_remove_the_old_one() {
+        let home = TempHome::new();
+        let path = home.0.join(".claude.json");
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({ "mcpServers": { "shelbymcp": {} } })).unwrap(),
+        )
+        .unwrap();
+        let runner = FakeRunner::succeeds(&["claude"]);
+        assert!(matches!(
+            setup(Client::ClaudeCode, &home.paths(), &runner).unwrap(),
+            Change::Changed { .. }
+        ));
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert!(
+            calls[0].1.contains(&"add".to_string())
+                && calls[0].1.contains(&"advisaur-mcp".to_string())
+        );
+        assert_eq!(calls[1].1, vec!["mcp", "remove", "shelbymcp"]);
+    }
+
+    #[test]
+    fn codex_counts_either_table() {
+        let home = TempHome::new();
+        let path = home.0.join(".codex/config.toml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "[mcp_servers.shelbymcp]\ncommand = \"npx\"\n").unwrap();
+        assert_eq!(
+            codex_keys(&path).unwrap(),
+            Keys {
+                current: false,
+                legacy: true
+            }
+        );
+        fs::write(&path, "[mcp_servers.\"advisaur-mcp\"]\ncommand = \"npx\"\n").unwrap();
+        assert_eq!(
+            codex_keys(&path).unwrap(),
+            Keys {
+                current: true,
+                legacy: false
+            }
         );
     }
 }

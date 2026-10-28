@@ -123,7 +123,7 @@ fn cursor_fallback_setup_and_uninstall_are_real_and_idempotent() {
     assert!(stdout(&first).contains("configured"));
     assert!(stderr(&first).is_empty());
     assert_eq!(
-        read_json(&path)["mcpServers"]["shelbymcp"]["command"],
+        read_json(&path)["mcpServers"]["advisaur-mcp"]["command"],
         "npx"
     );
 
@@ -134,7 +134,7 @@ fn cursor_fallback_setup_and_uninstall_are_real_and_idempotent() {
     let removed = home.run(&["uninstall", "cursor"]);
     assert!(removed.status.success(), "{}", stderr(&removed));
     assert!(stdout(&removed).contains("removed"));
-    assert!(read_json(&path)["mcpServers"].get("shelbymcp").is_none());
+    assert!(read_json(&path)["mcpServers"].get("advisaur-mcp").is_none());
 
     let absent = home.run(&["uninstall", "cursor"]);
     assert!(absent.status.success());
@@ -210,5 +210,45 @@ fn repair_projects_dry_run_then_apply_uses_the_rust_engine() {
     assert_eq!(
         thought.metadata.unwrap()["repaired_by"],
         "integrity-project-v1"
+    );
+}
+
+#[test]
+fn the_old_data_folder_moves_once_when_the_default_database_is_used() {
+    let home = TempHome::new();
+    let legacy = home.0.join(".shelbymcp");
+    fs::create_dir_all(&legacy).unwrap();
+    let memory = Memory::open(legacy.join("memory.db")).unwrap();
+    let id = insert_thought(
+        &memory.conn,
+        &ThoughtInput {
+            content: "Kept across the rename".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    drop(memory);
+
+    let output = home.run(&["repair-projects"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("Moved the memory database"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!legacy.exists());
+    let moved = Memory::open(home.0.join(".studiomoser-assistant-mcp/memory.db")).unwrap();
+    assert_eq!(
+        get_thought(&moved.conn, &id).unwrap().unwrap().content,
+        "Kept across the rename"
+    );
+    drop(moved);
+
+    // Done once: a later run has nothing to move.
+    let again = home.run(&["repair-projects"]);
+    assert!(
+        again.status.success() && !stderr(&again).contains("Moved"),
+        "{}",
+        stderr(&again)
     );
 }

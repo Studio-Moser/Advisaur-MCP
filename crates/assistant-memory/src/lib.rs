@@ -1,10 +1,11 @@
-//! Shelby memory engine: the shared contract from ADR 0001 implemented once in Rust.
+//! The memory engine: the shared contract from ADR 0001 implemented once in Rust.
 //!
 //! Layering: `db` opens SQLite and runs `migrations`; `thoughts`, `fts`, `vectors`,
 //! `edges` are the storage operations; `reconcile`, `topics`, `trust`, `identity`
 //! are pure contract functions. Tool-level behavior (scope resolution, capture
 //! actions, briefs) sits above this crate's storage layer.
 
+pub mod brand;
 pub mod brief;
 pub mod db;
 pub mod detect;

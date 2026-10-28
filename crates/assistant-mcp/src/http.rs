@@ -19,7 +19,7 @@ use crate::server::{MemoryServer, SharedMemory};
 
 fn discovery() -> serde_json::Value {
     json!({
-        "name": "shelbymcp",
+        "name": assistant_memory::brand::SERVER_NAME,
         "version": VERSION,
         "description": "Knowledge-graph memory server for AI tools via MCP",
         "transport": "streamable-http",
@@ -29,7 +29,7 @@ fn discovery() -> serde_json::Value {
 }
 
 async fn oauth_not_configured() -> Response {
-    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "oauth_not_configured", "error_description": "Set SHELBY_API_KEY to enable OAuth" }))).into_response()
+    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "oauth_not_configured", "error_description": format!("Set {} to enable OAuth", crate::config::API_KEY_ENV.0) }))).into_response()
 }
 
 #[derive(Clone)]
@@ -208,13 +208,18 @@ pub async fn serve(memory: SharedMemory, cfg: &ServeConfig) -> std::io::Result<(
     let app = router(memory, cfg);
     let listener = tokio::net::TcpListener::bind((cfg.http_host.as_str(), cfg.http_port)).await?;
     eprintln!(
-        "[INFO] advisaur-mcp running on http://{}:{}/mcp",
-        cfg.http_host, cfg.http_port
+        "[INFO] {} running on http://{}:{}/mcp",
+        assistant_memory::brand::SERVER_NAME,
+        cfg.http_host,
+        cfg.http_port
     );
     if cfg.api_key.is_some() {
         eprintln!("[INFO] Bearer token auth enabled");
     } else {
-        eprintln!("[WARN] No SHELBY_API_KEY set — running without auth");
+        eprintln!(
+            "[WARN] No {} set — running without auth",
+            crate::config::API_KEY_ENV.0
+        );
     }
     axum::serve(
         listener,

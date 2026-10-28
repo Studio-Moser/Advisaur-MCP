@@ -26,6 +26,29 @@ pub enum IntegrationError {
 
 pub type Result<T> = std::result::Result<T, IntegrationError>;
 
+/// The server's key in a client's MCP config: its brand-visible name (ADR-0012 D4). The same as
+/// `assistant_memory::brand::SERVER_NAME`; this crate depends on nothing, so a test in
+/// `assistant-mcp` checks they agree.
+pub const SERVER_KEY: &str = "advisaur-mcp";
+/// The server in prose and messages (`assistant_memory::brand::DISPLAY_NAME`).
+pub const DISPLAY_NAME: &str = "Advisaur MCP";
+/// The key the server had before the rename. Status counts it, setup replaces it, and uninstall
+/// removes it, so no client is left with both.
+pub const LEGACY_SERVER_KEY: &str = "shelbymcp";
+
+/// Which of the server's keys a client's config holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Keys {
+    pub current: bool,
+    pub legacy: bool,
+}
+
+impl Keys {
+    pub fn any(self) -> bool {
+        self.current || self.legacy
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum JsonStatus {
     Configured,
@@ -179,30 +202,45 @@ fn atomic_write_json(path: &Path, document: Map<String, Value>) -> Result<()> {
 }
 
 pub(crate) fn json_status(path: &Path) -> Result<JsonStatus> {
+    Ok(match json_keys(path)? {
+        Ok(keys) if keys.any() => JsonStatus::Configured,
+        Ok(_) => JsonStatus::NotConfigured,
+        Err(message) => JsonStatus::ManualAction(message),
+    })
+}
+
+/// The server's keys in a JSON config, or what the user must fix first.
+pub(crate) fn json_keys(path: &Path) -> Result<std::result::Result<Keys, String>> {
+    let none = Keys {
+        current: false,
+        legacy: false,
+    };
     if !path.exists() {
-        return Ok(JsonStatus::NotConfigured);
+        return Ok(Ok(none));
     }
     let mut document = match load_document(path)? {
         Document::Object(document) => document,
-        Document::ManualAction(message) => return Ok(JsonStatus::ManualAction(message)),
+        Document::ManualAction(message) => return Ok(Err(message)),
     };
     let Some(servers) = document.get_mut("mcpServers") else {
-        return Ok(JsonStatus::NotConfigured);
+        return Ok(Ok(none));
     };
     let Some(servers) = servers.as_object() else {
-        return Ok(JsonStatus::ManualAction(format!(
+        return Ok(Err(format!(
             "mcpServers in {} must be a JSON object; no changes were written",
             path.display()
         )));
     };
-    Ok(if servers.contains_key("shelbymcp") {
-        JsonStatus::Configured
-    } else {
-        JsonStatus::NotConfigured
-    })
+    Ok(Ok(Keys {
+        current: servers.contains_key(SERVER_KEY),
+        legacy: servers.contains_key(LEGACY_SERVER_KEY),
+    }))
 }
 
-pub(crate) fn merge_json(path: &Path, entry: Value) -> Result<JsonChange> {
+/// Writes the server's entry. An entry under the old key is replaced: by `entry` when it's one
+/// of the stock entries the old setup wrote (`legacy_stock`), else moved as it is, since the
+/// user wrote that command themselves.
+pub(crate) fn merge_json(path: &Path, entry: Value, legacy_stock: &[Value]) -> Result<JsonChange> {
     let mut document = match load_document(path)? {
         Document::Object(document) => document,
         Document::ManualAction(message) => return Ok(JsonChange::ManualAction(message)),
@@ -211,10 +249,18 @@ pub(crate) fn merge_json(path: &Path, entry: Value) -> Result<JsonChange> {
         Ok(servers) => servers,
         Err(message) => return Ok(JsonChange::ManualAction(message)),
     };
-    if servers.contains_key("shelbymcp") {
-        return Ok(JsonChange::AlreadyConfigured);
+    let legacy = servers.remove(LEGACY_SERVER_KEY);
+    if servers.contains_key(SERVER_KEY) {
+        if legacy.is_none() {
+            return Ok(JsonChange::AlreadyConfigured);
+        }
+    } else {
+        let value = match legacy {
+            Some(own) if !legacy_stock.contains(&own) => own,
+            _ => entry,
+        };
+        servers.insert(SERVER_KEY.into(), value);
     }
-    servers.insert("shelbymcp".into(), entry);
     atomic_write_json(path, document)?;
     Ok(JsonChange::Changed)
 }
@@ -236,7 +282,9 @@ pub(crate) fn remove_json(path: &Path) -> Result<JsonChange> {
             path.display()
         )));
     };
-    if servers.remove("shelbymcp").is_none() {
+    let current = servers.remove(SERVER_KEY).is_some();
+    let legacy = servers.remove(LEGACY_SERVER_KEY).is_some();
+    if !current && !legacy {
         return Ok(JsonChange::AlreadyAbsent);
     }
     atomic_write_json(path, document)?;

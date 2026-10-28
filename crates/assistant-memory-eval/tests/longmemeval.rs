@@ -193,8 +193,8 @@ fn pinned_manifest_has_six_evidence_bearing_cases_per_question_type() {
 #[test]
 #[ignore = "requires the externally cached LongMemEval-S dataset"]
 fn pinned_dataset_matches_and_runs_all_selected_cases() {
-    let path = std::env::var("SHELBY_LONGMEMEVAL_DATA")
-        .expect("set SHELBY_LONGMEMEVAL_DATA to the verified external JSON file");
+    let path = std::env::var("ASSISTANT_LONGMEMEVAL_DATA")
+        .expect("set ASSISTANT_LONGMEMEVAL_DATA to the verified external JSON file");
     let manifest = load_manifest(PINNED_MANIFEST).unwrap();
 
     let result = run_longmemeval_suite(&manifest, PathBuf::from(path).as_path()).unwrap();
