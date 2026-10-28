@@ -13,9 +13,9 @@
   "support": "https://github.com/Studio-Moser/shelbymcp/issues",
   "server": {
     "type": "binary",
-    "entry_point": "server/shelby-mcp",
+    "entry_point": "server/advisaur-mcp",
     "mcp_config": {
-      "command": "${__dirname}/server/shelby-mcp",
+      "command": "${__dirname}/server/advisaur-mcp",
       "args": []
     }
   }

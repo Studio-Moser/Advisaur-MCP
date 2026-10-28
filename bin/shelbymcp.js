@@ -48,7 +48,7 @@ export function resolveBinary(packageName, resolver = require.resolve, platform 
       { cause: error },
     );
   }
-  const executable = platform === "win32" ? "shelby-mcp.exe" : "shelby-mcp";
+  const executable = platform === "win32" ? "advisaur-mcp.exe" : "advisaur-mcp";
   return join(dirname(manifest), "bin", executable);
 }
 

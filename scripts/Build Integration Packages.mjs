@@ -28,11 +28,11 @@ const sourceRoots = {
   devin: join(repositoryRoot, "integrations", "devin"),
 };
 const mcpbTargets = new Map([
-  ["aarch64-apple-darwin", { slug: "darwin-arm64", platform: "darwin", executable: "shelby-mcp" }],
-  ["x86_64-apple-darwin", { slug: "darwin-x64", platform: "darwin", executable: "shelby-mcp" }],
-  ["aarch64-unknown-linux-gnu", { slug: "linux-arm64", platform: "linux", executable: "shelby-mcp" }],
-  ["x86_64-unknown-linux-gnu", { slug: "linux-x64", platform: "linux", executable: "shelby-mcp" }],
-  ["x86_64-pc-windows-msvc", { slug: "win32-x64", platform: "win32", executable: "shelby-mcp.exe" }],
+  ["aarch64-apple-darwin", { slug: "darwin-arm64", platform: "darwin", executable: "advisaur-mcp" }],
+  ["x86_64-apple-darwin", { slug: "darwin-x64", platform: "darwin", executable: "advisaur-mcp" }],
+  ["aarch64-unknown-linux-gnu", { slug: "linux-arm64", platform: "linux", executable: "advisaur-mcp" }],
+  ["x86_64-unknown-linux-gnu", { slug: "linux-x64", platform: "linux", executable: "advisaur-mcp" }],
+  ["x86_64-pc-windows-msvc", { slug: "win32-x64", platform: "win32", executable: "advisaur-mcp.exe" }],
 ]);
 const hostTargets = new Map([
   ["darwin-arm64", "aarch64-apple-darwin"],

@@ -4,11 +4,11 @@ import test from "node:test";
 import { launch, resolveBinary, selectPackage } from "../bin/shelbymcp.js";
 
 const mappings = [
-  ["darwin", "arm64", "shelbymcp-darwin-arm64", "shelby-mcp"],
-  ["darwin", "x64", "shelbymcp-darwin-x64", "shelby-mcp"],
-  ["linux", "arm64", "shelbymcp-linux-arm64", "shelby-mcp"],
-  ["linux", "x64", "shelbymcp-linux-x64", "shelby-mcp"],
-  ["win32", "x64", "shelbymcp-win32-x64", "shelby-mcp.exe"],
+  ["darwin", "arm64", "shelbymcp-darwin-arm64", "advisaur-mcp"],
+  ["darwin", "x64", "shelbymcp-darwin-x64", "advisaur-mcp"],
+  ["linux", "arm64", "shelbymcp-linux-arm64", "advisaur-mcp"],
+  ["linux", "x64", "shelbymcp-linux-x64", "advisaur-mcp"],
+  ["win32", "x64", "shelbymcp-win32-x64", "advisaur-mcp.exe"],
 ];
 
 test("maps every supported platform and architecture", () => {
@@ -50,7 +50,7 @@ test("forwards arguments without a shell and propagates the exit status", () => 
   });
 
   assert.deepEqual(spawnCall, {
-    binary: "/modules/shelbymcp-darwin-arm64/bin/shelby-mcp",
+    binary: "/modules/shelbymcp-darwin-arm64/bin/advisaur-mcp",
     argv: ["serve", "--verbose"],
     options: { stdio: "inherit", shell: false },
   });

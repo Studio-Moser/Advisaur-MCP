@@ -10,9 +10,9 @@ ShelbyMCP is a Rust workspace that ships a local knowledge-graph memory engine, 
 
 ## Repository map
 
-- `crates/shelby-memory/` — SQLite migrations, thoughts, search, vectors, edges, project identity, trust, repair, and tool-domain handlers.
-- `crates/shelby-integrations/` — current client catalog and safe fallback configuration.
-- `crates/shelby-mcp/` — MCP schemas, prompts, stdio/HTTP transports, OAuth, CLI, and public library surface.
+- `crates/assistant-memory/` — SQLite migrations, thoughts, search, vectors, edges, project identity, trust, repair, and tool-domain handlers.
+- `crates/assistant-integrations/` — current client catalog and safe fallback configuration.
+- `crates/assistant-mcp/` — MCP schemas, prompts, stdio/HTTP transports, OAuth, CLI, and public library surface.
 - `bin/` and `npm/` — npm launcher and native platform package manifests.
 - `integrations/` — source manifests for client-native packages; canonical skills are copied during assembly.
 - `skills/` and `assets/` — canonical skill and prompt sources.

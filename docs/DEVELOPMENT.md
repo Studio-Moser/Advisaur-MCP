@@ -22,10 +22,10 @@ npm audit
 Useful focused commands:
 
 ```bash
-cargo test -p shelby-memory
-cargo test -p shelby-integrations
-cargo test -p shelby-mcp --test cli -- --nocapture
-cargo test -p shelby-mcp --test stdio -- --nocapture
+cargo test -p assistant-memory
+cargo test -p assistant-integrations
+cargo test -p assistant-mcp --test cli -- --nocapture
+cargo test -p assistant-mcp --test stdio -- --nocapture
 node --test tests/launcher.test.js
 node --test tests/integrations.test.js
 ```
@@ -35,8 +35,8 @@ The Rust workspace test includes a mandatory read/extend check against `tests/fi
 ## Run locally
 
 ```bash
-cargo run -p shelby-mcp -- --db :memory:
-cargo run -p shelby-mcp -- --transport http --host 127.0.0.1 --port 3100 --db :memory:
+cargo run -p assistant-mcp -- --db :memory:
+cargo run -p assistant-mcp -- --transport http --host 127.0.0.1 --port 3100 --db :memory:
 ```
 
 Use a temporary database for manual testing. Never point tests at a user's `~/.shelbymcp/memory.db`.
@@ -45,10 +45,10 @@ Use a temporary database for manual testing. Never point tests at a user's `~/.s
 
 ```text
 crates/
-  shelby-memory/       memory engine and domain handlers
-  shelby-memory-eval/  deterministic contract and retrieval evaluation
-  shelby-integrations/ client catalog and safe fallback setup
-  shelby-mcp/          MCP library, HTTP/OAuth, and binary CLI
+  assistant-memory/       memory engine and domain handlers
+  assistant-memory-eval/  deterministic contract and retrieval evaluation
+  assistant-integrations/ client catalog and safe fallback setup
+  assistant-mcp/          MCP library, HTTP/OAuth, and binary CLI
 bin/                   dependency-free npm launcher
 npm/                   five native package manifests
 integrations/          client package source manifests
@@ -58,7 +58,7 @@ scripts/               package and contract checks
 tests/fixtures/         cross-engine and shared policy fixtures
 ```
 
-Keep boundaries strict: SQL and memory rules belong in `shelby-memory`; client configuration belongs in `shelby-integrations`; protocol and transport code belongs in `shelby-mcp`.
+Keep boundaries strict: SQL and memory rules belong in `assistant-memory`; client configuration belongs in `assistant-integrations`; protocol and transport code belongs in `advisaur-mcp`.
 
 ## Contract changes
 
@@ -71,18 +71,18 @@ When changing a shared contract, update the corresponding JSON fixture and every
 Build and smoke-test the current native npm package:
 
 ```bash
-cargo build -p shelby-mcp
+cargo build -p assistant-mcp
 node "scripts/Build Native Packages.mjs" \
   --target aarch64-apple-darwin \
-  --binary target/debug/shelby-mcp \
+  --binary target/debug/advisaur-mcp \
   --output target/npm
-node "scripts/Verify Package.mjs" --binary target/debug/shelby-mcp
+node "scripts/Verify Package.mjs" --binary target/debug/advisaur-mcp
 ```
 
 Use the target triple matching your machine when building a platform package. Assemble and validate client sources with:
 
 ```bash
-node "scripts/Build Integration Packages.mjs" --all --binary target/debug/shelby-mcp
+node "scripts/Build Integration Packages.mjs" --all --binary target/debug/advisaur-mcp
 python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py integrations/codex/shelbymcp
 claude plugin validate integrations/claude-code
 ```
@@ -97,4 +97,4 @@ The last two commands are optional local validators; repository contract tests r
 2. The ref is the exact `v0.4.0` tag.
 3. The protected `release` environment approves the job.
 
-Platform npm packages publish before the wrapper. `shelby-memory` and `shelby-integrations` publish as reusable Rust libraries. No local command in the development gate publishes anything.
+Platform npm packages publish before the wrapper. `assistant-memory` and `assistant-integrations` publish as reusable Rust libraries. No local command in the development gate publishes anything.

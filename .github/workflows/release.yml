@@ -54,16 +54,16 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Build release binary
-        run: cargo build -p shelby-mcp --release --locked --target ${{ matrix.target }}
+        run: cargo build -p assistant-mcp --release --locked --target ${{ matrix.target }}
 
       - name: Archive Unix binary and license
         if: matrix.platform != 'windows'
         shell: bash
         run: |
           mkdir -p release-staging release-assets
-          cp "target/${{ matrix.target }}/release/shelby-mcp" release-staging/
+          cp "target/${{ matrix.target }}/release/advisaur-mcp" release-staging/
           cp LICENSE release-staging/
-          tar -C release-staging -czf "release-assets/shelby-mcp-${{ matrix.target }}.tar.gz" shelby-mcp LICENSE
+          tar -C release-staging -czf "release-assets/shelby-mcp-${{ matrix.target }}.tar.gz" advisaur-mcp LICENSE
           if [ "${{ matrix.platform }}" = "macos" ]; then
             (cd release-assets && shasum -a 256 "shelby-mcp-${{ matrix.target }}.tar.gz" > "shelby-mcp-${{ matrix.target }}.tar.gz.sha256")
           else
@@ -75,9 +75,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release-staging, release-assets | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/shelby-mcp.exe" release-staging/
+          Copy-Item "target/${{ matrix.target }}/release/advisaur-mcp.exe" release-staging/
           Copy-Item LICENSE release-staging/
-          Compress-Archive -Path release-staging/shelby-mcp.exe, release-staging/LICENSE -DestinationPath "release-assets/shelby-mcp-${{ matrix.target }}.zip"
+          Compress-Archive -Path release-staging/advisaur-mcp.exe, release-staging/LICENSE -DestinationPath "release-assets/shelby-mcp-${{ matrix.target }}.zip"
           $hash = (Get-FileHash "release-assets/shelby-mcp-${{ matrix.target }}.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  shelby-mcp-${{ matrix.target }}.zip" | Set-Content -NoNewline "release-assets/shelby-mcp-${{ matrix.target }}.zip.sha256"
 
@@ -118,40 +118,40 @@ jobs:
           mkdir -p target/release-binaries
           for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
             mkdir -p "target/release-binaries/$target"
-            tar -xzf "downloaded/shelby-mcp-$target.tar.gz" -C "target/release-binaries/$target" shelby-mcp
+            tar -xzf "downloaded/shelby-mcp-$target.tar.gz" -C "target/release-binaries/$target" advisaur-mcp
           done
           mkdir -p target/release-binaries/x86_64-pc-windows-msvc
-          unzip -q downloaded/shelby-mcp-x86_64-pc-windows-msvc.zip shelby-mcp.exe -d target/release-binaries/x86_64-pc-windows-msvc
-          chmod +x target/release-binaries/*/shelby-mcp
+          unzip -q downloaded/shelby-mcp-x86_64-pc-windows-msvc.zip advisaur-mcp.exe -d target/release-binaries/x86_64-pc-windows-msvc
+          chmod +x target/release-binaries/*/advisaur-mcp
 
       - name: Install package tooling
         run: npm ci
 
       - name: Verify Rust crate packages
         run: |
-          cargo package -p shelby-memory --locked
-          cargo package -p shelby-integrations --locked
+          cargo package -p assistant-memory --locked
+          cargo package -p assistant-integrations --locked
 
       - name: Build npm packages
         shell: bash
         run: |
           mkdir -p target/release-assets
-          node "scripts/Build Native Packages.mjs" --target aarch64-apple-darwin --binary target/release-binaries/aarch64-apple-darwin/shelby-mcp --output target/release-assets
-          node "scripts/Build Native Packages.mjs" --target x86_64-apple-darwin --binary target/release-binaries/x86_64-apple-darwin/shelby-mcp --output target/release-assets
-          node "scripts/Build Native Packages.mjs" --target aarch64-unknown-linux-gnu --binary target/release-binaries/aarch64-unknown-linux-gnu/shelby-mcp --output target/release-assets
-          node "scripts/Build Native Packages.mjs" --target x86_64-unknown-linux-gnu --binary target/release-binaries/x86_64-unknown-linux-gnu/shelby-mcp --output target/release-assets
-          node "scripts/Build Native Packages.mjs" --target x86_64-pc-windows-msvc --binary target/release-binaries/x86_64-pc-windows-msvc/shelby-mcp.exe --output target/release-assets
+          node "scripts/Build Native Packages.mjs" --target aarch64-apple-darwin --binary target/release-binaries/aarch64-apple-darwin/advisaur-mcp --output target/release-assets
+          node "scripts/Build Native Packages.mjs" --target x86_64-apple-darwin --binary target/release-binaries/x86_64-apple-darwin/advisaur-mcp --output target/release-assets
+          node "scripts/Build Native Packages.mjs" --target aarch64-unknown-linux-gnu --binary target/release-binaries/aarch64-unknown-linux-gnu/advisaur-mcp --output target/release-assets
+          node "scripts/Build Native Packages.mjs" --target x86_64-unknown-linux-gnu --binary target/release-binaries/x86_64-unknown-linux-gnu/advisaur-mcp --output target/release-assets
+          node "scripts/Build Native Packages.mjs" --target x86_64-pc-windows-msvc --binary target/release-binaries/x86_64-pc-windows-msvc/advisaur-mcp.exe --output target/release-assets
           npm pack . --pack-destination target/release-assets
 
       - name: Verify npm and integration packages
         run: |
-          node "scripts/Verify Package.mjs" --binary target/release-binaries/x86_64-unknown-linux-gnu/shelby-mcp
+          node "scripts/Verify Package.mjs" --binary target/release-binaries/x86_64-unknown-linux-gnu/advisaur-mcp
           node "scripts/Build Integration Packages.mjs" --all \
-            --mcpb aarch64-apple-darwin=target/release-binaries/aarch64-apple-darwin/shelby-mcp \
-            --mcpb x86_64-apple-darwin=target/release-binaries/x86_64-apple-darwin/shelby-mcp \
-            --mcpb aarch64-unknown-linux-gnu=target/release-binaries/aarch64-unknown-linux-gnu/shelby-mcp \
-            --mcpb x86_64-unknown-linux-gnu=target/release-binaries/x86_64-unknown-linux-gnu/shelby-mcp \
-            --mcpb x86_64-pc-windows-msvc=target/release-binaries/x86_64-pc-windows-msvc/shelby-mcp.exe
+            --mcpb aarch64-apple-darwin=target/release-binaries/aarch64-apple-darwin/advisaur-mcp \
+            --mcpb x86_64-apple-darwin=target/release-binaries/x86_64-apple-darwin/advisaur-mcp \
+            --mcpb aarch64-unknown-linux-gnu=target/release-binaries/aarch64-unknown-linux-gnu/advisaur-mcp \
+            --mcpb x86_64-unknown-linux-gnu=target/release-binaries/x86_64-unknown-linux-gnu/advisaur-mcp \
+            --mcpb x86_64-pc-windows-msvc=target/release-binaries/x86_64-pc-windows-msvc/advisaur-mcp.exe
           npm test
           npm audit
 
@@ -215,8 +215,8 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish -p shelby-memory --locked
-          cargo publish -p shelby-integrations --locked
+          cargo publish -p assistant-memory --locked
+          cargo publish -p assistant-integrations --locked
 
       - name: Create or update GitHub release
         env:

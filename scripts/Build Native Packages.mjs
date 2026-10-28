@@ -18,19 +18,19 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const TARGETS = new Map([
   ["aarch64-apple-darwin", {
-    packageDir: "darwin-arm64", executable: "shelby-mcp", os: "darwin", cpu: "arm64",
+    packageDir: "darwin-arm64", executable: "advisaur-mcp", os: "darwin", cpu: "arm64",
   }],
   ["x86_64-apple-darwin", {
-    packageDir: "darwin-x64", executable: "shelby-mcp", os: "darwin", cpu: "x64",
+    packageDir: "darwin-x64", executable: "advisaur-mcp", os: "darwin", cpu: "x64",
   }],
   ["aarch64-unknown-linux-gnu", {
-    packageDir: "linux-arm64", executable: "shelby-mcp", os: "linux", cpu: "arm64",
+    packageDir: "linux-arm64", executable: "advisaur-mcp", os: "linux", cpu: "arm64",
   }],
   ["x86_64-unknown-linux-gnu", {
-    packageDir: "linux-x64", executable: "shelby-mcp", os: "linux", cpu: "x64",
+    packageDir: "linux-x64", executable: "advisaur-mcp", os: "linux", cpu: "x64",
   }],
   ["x86_64-pc-windows-msvc", {
-    packageDir: "win32-x64", executable: "shelby-mcp.exe", os: "win32", cpu: "x64",
+    packageDir: "win32-x64", executable: "advisaur-mcp.exe", os: "win32", cpu: "x64",
   }],
 ]);
 
@@ -71,7 +71,7 @@ export function buildNativePackage({ target, binary, output }) {
 
     const destinationBinary = join(binDir, definition.executable);
     copyFileSync(binaryPath, destinationBinary);
-    if (definition.executable !== "shelby-mcp.exe") chmodSync(destinationBinary, 0o755);
+    if (definition.executable !== "advisaur-mcp.exe") chmodSync(destinationBinary, 0o755);
 
     const packed = JSON.parse(run("npm", [
       "pack",

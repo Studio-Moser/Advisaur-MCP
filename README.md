@@ -31,7 +31,7 @@ Package-first integrations are included in the protected `v0.4.0` release:
 | Claude Desktop | `shelbymcp-claude-desktop-<platform>-0.4.0.mcpb` |
 | Devin | `shelbymcp-devin-0.4.0.zip` |
 
-Use `shelby-mcp setup <client>` only when the client package or marketplace entry is not available yet. The fallback supports `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, and `antigravity`; `devin` directs you to its organization-managed marketplace, while `windsurf` keeps the legacy local config flow. It safely merges the MCP entry and never appends instructions to a global rules file. See [Agent Setup](docs/AGENT-SETUP.md).
+Use `advisaur-mcp setup <client>` only when the client package or marketplace entry is not available yet. The fallback supports `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, and `antigravity`; `devin` directs you to its organization-managed marketplace, while `windsurf` keeps the legacy local config flow. It safely merges the MCP entry and never appends instructions to a global rules file. See [Agent Setup](docs/AGENT-SETUP.md).
 
 ## What agents can do
 
@@ -47,10 +47,10 @@ Search returns summaries and IDs so clients can fetch full content only when nee
 The optional Forage and Onboard skills are packaged with supported clients. They run in the user's agent session; ShelbyMCP does not receive or store model credentials. Standalone prompt bodies remain available:
 
 ```bash
-shelby-mcp forage
-shelby-mcp onboard
-shelby-mcp migrate
-shelby-mcp protocol
+advisaur-mcp forage
+advisaur-mcp onboard
+advisaur-mcp migrate
+advisaur-mcp protocol
 ```
 
 ## HTTP and OAuth
@@ -69,7 +69,7 @@ Endpoints include `/mcp`, `/health`, and MCP discovery documents. Setting `SHELB
 ```bash
 git clone https://github.com/Studio-Moser/shelbymcp.git
 cd shelbymcp
-cargo build -p shelby-mcp
+cargo build -p assistant-mcp
 cargo test --workspace
 npm ci
 npm test
@@ -83,9 +83,9 @@ Memory-engine pull requests also run a deterministic contract and public retriev
 
 The workspace is intentionally layered for the cross-platform Shelby App:
 
-- `shelby-memory` is the SQLite memory engine and all memory-domain behavior.
-- `shelby-integrations` is the current client catalog plus safe setup/status/uninstall helpers.
-- `shelby-mcp` exposes the MCP service and reusable Axum router as a library as well as a binary.
+- `assistant-memory` is the SQLite memory engine and all memory-domain behavior.
+- `assistant-integrations` is the current client catalog plus safe setup/status/uninstall helpers.
+- `assistant-mcp` exposes the MCP service and reusable Axum router as a library as well as a binary.
 
 The app can embed these crates in-process, share one database contract across macOS and iOS, and host the same HTTP router without spawning Node.
 

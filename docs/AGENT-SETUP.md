@@ -31,7 +31,7 @@ Install the npm wrapper globally or invoke it with `npx`:
 
 ```bash
 npm install -g shelbymcp
-shelby-mcp setup cursor
+advisaur-mcp setup cursor
 ```
 
 Supported client names are:
@@ -45,7 +45,7 @@ claude-code  claude-desktop  cursor  codex  devin  gemini  antigravity
 Remove a fallback entry with:
 
 ```bash
-shelby-mcp uninstall cursor
+advisaur-mcp uninstall cursor
 ```
 
 ## Manual MCP configuration
@@ -70,14 +70,14 @@ Do not put `npx -y shelbymcp` into a single `command` string. Keep the executabl
 Packages for skill-capable clients include `shelby-forage` and `shelby-onboard` byte-for-byte from the repository's canonical `skills/` directory. For clients that do not expose packaged skills, print the prompt and paste it into a conversation or scheduled task:
 
 ```bash
-shelby-mcp onboard
-shelby-mcp forage
+advisaur-mcp onboard
+advisaur-mcp forage
 ```
 
-To migrate context from another assistant, run `shelby-mcp migrate`, paste the output into that assistant, and give its structured response to a Shelby-connected agent.
+To migrate context from another assistant, run `advisaur-mcp migrate`, paste the output into that assistant, and give its structured response to a Shelby-connected agent.
 
 ## Verify
 
 Restart the client after installation, inspect its MCP server status, and ask it to list Shelby's tools. The server should expose 12 tools. Capture one test thought, start a new session, and search for it.
 
-For direct protocol verification from source, run `cargo test -p shelby-mcp --test stdio`.
+For direct protocol verification from source, run `cargo test -p assistant-mcp --test stdio`.

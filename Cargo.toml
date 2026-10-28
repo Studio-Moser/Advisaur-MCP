@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/shelby-integrations", "crates/shelby-memory", "crates/shelby-memory-eval", "crates/shelby-mcp"]
+members = ["crates/assistant-integrations", "crates/assistant-memory", "crates/assistant-memory-eval", "crates/assistant-mcp"]
 
 [workspace.package]
 version = "0.4.0"

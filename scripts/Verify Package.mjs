@@ -75,7 +75,7 @@ export function verifyPackage(binary) {
       ? join(prefix, "node_modules", ".bin", "shelbymcp.cmd")
       : join(prefix, "node_modules", ".bin", "shelbymcp");
     const version = run(executable, ["--version"]);
-    if (version.stdout.trim() !== "shelby-mcp v0.4.0") {
+    if (version.stdout.trim() !== "advisaur-mcp v0.4.0") {
       throw new Error(`Unexpected packaged version: ${version.stdout.trim()}`);
     }
     return version.stdout.trim();

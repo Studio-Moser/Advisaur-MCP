@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "start": "node bin/shelbymcp.js",
-    "build": "cargo build -p shelby-mcp",
+    "build": "cargo build -p assistant-mcp",
     "test": "node --test tests/*.test.js && node \"scripts/Check Documentation Links.mjs\"",
     "check": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings"
   },

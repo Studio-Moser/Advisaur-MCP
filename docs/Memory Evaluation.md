@@ -4,7 +4,7 @@ Shelby's PR memory gate is deterministic, model-free, and tied directly to the R
 
 ## What runs
 
-The `shelby-memory-eval` crate runs two suites against a fresh in-memory Shelby database for every case:
+The `assistant-memory-eval` crate runs two suites against a fresh in-memory Shelby database for every case:
 
 1. The 58-case Shelby corpus calls the production `search_thoughts`, `get_brief`, and `select_context` handlers. Six exact contracts check IDs, error categories, project isolation, trust fencing, lifecycle exclusions, and token-budget behavior. Another 52 curated hard confusers—13 per slice—cover same-topic/wrong-project, same-person/wrong-event, stale/current fact, and near-duplicate decisions with different outcomes.
 2. The 36-case LongMemEval-S subset calls the production `search_thoughts` handler. It contains six evidence-bearing cases from each of the six upstream question types and measures session retrieval with Precision@5, Recall@5, NDCG@10, and MRR@10.
@@ -32,28 +32,28 @@ The public suite is a retrieval proxy, not a complete measure of memory quality 
 Choose a cache location outside the repository, then fetch the pinned dataset once:
 
 ```bash
-cargo run -p shelby-memory-eval -- \
-  fetch longmemeval-pr --cache /tmp/shelby-memory-eval/longmemeval-s.json
+cargo run -p assistant-memory-eval -- \
+  fetch longmemeval-pr --cache /tmp/assistant-memory-eval/longmemeval-s.json
 ```
 
 Run the candidate twice. `run` never downloads data or calls a model:
 
 ```bash
-cargo run -p shelby-memory-eval -- \
+cargo run -p assistant-memory-eval -- \
   run --suite pr \
-  --dataset /tmp/shelby-memory-eval/longmemeval-s.json \
+  --dataset /tmp/assistant-memory-eval/longmemeval-s.json \
   --output target/memory-eval/candidate
 
-cargo run -p shelby-memory-eval -- \
+cargo run -p assistant-memory-eval -- \
   run --suite pr \
-  --dataset /tmp/shelby-memory-eval/longmemeval-s.json \
+  --dataset /tmp/assistant-memory-eval/longmemeval-s.json \
   --output target/memory-eval/candidate-repeat
 ```
 
 Compare saved result manifests:
 
 ```bash
-cargo run -p shelby-memory-eval -- \
+cargo run -p assistant-memory-eval -- \
   compare \
   --base target/memory-eval/base/results.json \
   --candidate target/memory-eval/candidate/results.json \

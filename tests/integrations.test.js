@@ -40,7 +40,7 @@ test("source manifests match each current client contract", () => {
   assert.equal(mcpb.manifest_version, "0.4");
   assert.equal(mcpb.version, "0.4.0");
   assert.equal(mcpb.server.type, "binary");
-  assert.equal(mcpb.server.entry_point, "server/shelby-mcp");
+  assert.equal(mcpb.server.entry_point, "server/advisaur-mcp");
 
   const devin = readJson("integrations/devin/registry.json");
   assert.equal(devin.version, "0.4.0");
@@ -51,7 +51,7 @@ test("source manifests match each current client contract", () => {
 
 test("assembly copies canonical skills byte-for-byte and builds a platform-specific MCPB", () => {
   const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-integrations-"));
-  const binary = join(temporary, "shelby-mcp");
+  const binary = join(temporary, "advisaur-mcp");
   writeFileSync(binary, "fake native binary");
   const output = join(temporary, "output");
 
@@ -68,18 +68,18 @@ test("assembly copies canonical skills byte-for-byte and builds a platform-speci
   const platform = `${process.platform}-${process.arch}`;
   const packageRoot = join(output, `claude-desktop-${platform}`);
   assert.equal(
-    readFileSync(join(packageRoot, "server", "shelby-mcp"), "utf8"),
+    readFileSync(join(packageRoot, "server", "advisaur-mcp"), "utf8"),
     "fake native binary",
   );
   const packagedManifest = JSON.parse(readFileSync(join(packageRoot, "manifest.json"), "utf8"));
   assert.deepEqual(packagedManifest.compatibility.platforms, [process.platform]);
   assert.ok(existsSync(join(output, `shelbymcp-claude-desktop-${platform}-0.4.0.mcpb`)));
-  assert.equal(lstatSync(join(packageRoot, "server", "shelby-mcp")).isSymbolicLink(), false);
+  assert.equal(lstatSync(join(packageRoot, "server", "advisaur-mcp")).isSymbolicLink(), false);
 });
 
 test("assembly names Windows MCPB binaries with the executable suffix", () => {
   const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-windows-mcpb-"));
-  const binary = join(temporary, "shelby-mcp.exe");
+  const binary = join(temporary, "advisaur-mcp.exe");
   writeFileSync(binary, "fake Windows binary");
   const output = join(temporary, "output");
 
@@ -91,14 +91,14 @@ test("assembly names Windows MCPB binaries with the executable suffix", () => {
 
   const packageRoot = join(output, "claude-desktop-win32-x64");
   const manifest = JSON.parse(readFileSync(join(packageRoot, "manifest.json"), "utf8"));
-  assert.equal(manifest.server.entry_point, "server/shelby-mcp.exe");
-  assert.equal(manifest.server.mcp_config.command, "${__dirname}/server/shelby-mcp.exe");
-  assert.ok(existsSync(join(packageRoot, "server", "shelby-mcp.exe")));
+  assert.equal(manifest.server.entry_point, "server/advisaur-mcp.exe");
+  assert.equal(manifest.server.mcp_config.command, "${__dirname}/server/advisaur-mcp.exe");
+  assert.ok(existsSync(join(packageRoot, "server", "advisaur-mcp.exe")));
 });
 
 test("assembly rejects unknown clients and source symlinks", () => {
   const temporary = mkdtempSync(join(tmpdir(), "shelbymcp-integrations-safety-"));
-  const binary = join(temporary, "shelby-mcp");
+  const binary = join(temporary, "advisaur-mcp");
   writeFileSync(binary, "binary");
   assert.throws(
     () => buildIntegrationPackages({ clients: ["unknown"], binary, output: join(temporary, "out") }),

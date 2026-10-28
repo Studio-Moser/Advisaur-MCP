@@ -10,7 +10,7 @@
   },
   "compatibility": {
     "clientAlias": "windsurf",
-    "command": "shelby-mcp setup windsurf",
+    "command": "advisaur-mcp setup windsurf",
     "note": "The windsurf command configures only the legacy local Windsurf client."
   }
 }
