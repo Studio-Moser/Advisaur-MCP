@@ -103,13 +103,53 @@ fn toml_table(line: &str) -> Option<String> {
     }
     let parts: Vec<String> = line[1..close]
         .split('.')
-        .map(|part| {
-            part.trim()
-                .trim_matches(|c| c == '"' || c == '\'')
-                .to_string()
-        })
+        .map(|part| unquote_toml_key(part.trim()))
         .collect();
     Some(parts.join("."))
+}
+
+/// A TOML key without its quotes: a literal ('…') key as it is, and a basic ("…") one with its
+/// escapes decoded, so `"shelby\u006dcp"` reads as the old key it is.
+fn unquote_toml_key(key: &str) -> String {
+    if let Some(literal) = key
+        .strip_prefix('\'')
+        .and_then(|key| key.strip_suffix('\''))
+    {
+        return literal.to_string();
+    }
+    let Some(basic) = key.strip_prefix('"').and_then(|key| key.strip_suffix('"')) else {
+        return key.to_string();
+    };
+    let mut decoded = String::new();
+    let mut chars = basic.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            decoded.push(c);
+            continue;
+        }
+        let width = match chars.next() {
+            Some('u') => 4,
+            Some('U') => 8,
+            Some('n') => {
+                decoded.push('\n');
+                continue;
+            }
+            Some('t') => {
+                decoded.push('\t');
+                continue;
+            }
+            Some(other) => {
+                decoded.push(other);
+                continue;
+            }
+            None => break,
+        };
+        let hex: String = chars.by_ref().take(width).collect();
+        if let Some(c) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+            decoded.push(c);
+        }
+    }
+    decoded
 }
 
 /// The table Codex holds under the old key, as a JSON entry: its command and args, plus any
@@ -124,6 +164,15 @@ fn codex_legacy_entry(path: &Path) -> Result<Option<serde_json::Value>> {
         return Ok(None);
     }
     let mut entry = serde_json::Map::new();
+    // A sub-table of the old table (its `env`, say) can sit anywhere in the document.
+    let sub_table = format!("{table}.");
+    if let Some(name) = content
+        .lines()
+        .filter_map(toml_table)
+        .find(|name| name.starts_with(&sub_table))
+    {
+        entry.insert("table".into(), json!(name));
+    }
     for line in lines {
         let line = line.trim();
         if let Some(name) = toml_table(line) {
@@ -312,8 +361,10 @@ pub fn setup(
             {
                 return Ok(Change::ManualAction {
                     message: format!(
-                        "The {LEGACY_SERVER_KEY} entry in {} runs a command you set. Rename its key to \
-                         {SERVER_KEY} there to keep it, or remove it and run setup again.",
+                        "The {LEGACY_SERVER_KEY} entry in {} has settings of yours (a command, arguments or an \
+                         environment) that the client's CLI can't carry over. Rename its key to {SERVER_KEY}, \
+                         and its {LEGACY_SERVER_KEY} package to {SERVER_KEY} if it runs one, or remove it and run \
+                         setup again.",
                         path.display()
                     ),
                 });
@@ -843,29 +894,93 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_the_old_setup_wrote_is_recognized_and_no_user_command_is() {
-        let old = [
+    fn only_what_the_old_setup_wrote_for_a_plain_install_is_stock() {
+        let stock = [
             json!({ "command": "npx", "args": ["shelbymcp"] }),
             json!({ "command": "npx", "args": ["-y", "shelbymcp"] }),
-            json!({ "type": "stdio", "command": "npx", "args": ["shelbymcp"] }),
+            json!({ "type": "stdio", "command": "npx", "args": ["shelbymcp"], "env": {} }),
             json!({ "command": "cmd", "args": ["/c", "npx", "-y", "shelbymcp"] }),
-            json!({ "command": "/Users/u/.nvm/versions/node/v22.1.0/bin/node",
-                    "args": ["/Users/u/.nvm/versions/node/v22.1.0/bin/shelbymcp"] }),
-            json!({ "command": "/usr/local/bin/shelbymcp" }),
+            json!({ "command": "/bin/bash", "args": ["-l", "-c", "npx shelbymcp"] }),
         ];
-        for entry in &old {
+        for entry in &stock {
             assert!(crate::config::is_old_setup_entry(entry), "{entry}");
         }
         let own = [
             json!({ "command": "/opt/memory/shelby-mcp", "args": ["--db", "/data/memory.db"] }),
             json!({ "command": "npx", "args": ["-y", "shelbymcp"], "env": { "SHELBY_DB_PATH": "/data/memory.db" } }),
             json!({ "command": "npx", "args": ["-y", "shelbymcp", "--db", "/data/memory.db"] }),
+            json!({ "command": "/Users/u/.nvm/versions/node/v22/bin/node",
+                    "args": ["/Users/u/.nvm/versions/node/v22/bin/shelbymcp"] }),
             json!({ "type": "http", "url": "http://localhost:3100/mcp" }),
             json!({}),
         ];
         for entry in &own {
             assert!(!crate::config::is_old_setup_entry(entry), "{entry}");
         }
+    }
+
+    #[test]
+    fn an_entry_that_ran_the_old_package_through_npx_runs_the_new_one_with_its_settings() {
+        use crate::config::renamed_entry;
+        let nvm_npx = json!({
+            "command": "/Users/u/.nvm/versions/node/v22/bin/node",
+            "args": ["/Users/u/.nvm/versions/node/v22/bin/npx", "shelbymcp"],
+            "env": { "PATH": "/Users/u/.nvm/versions/node/v22/bin:/usr/bin" },
+        });
+        assert_eq!(
+            renamed_entry(&nvm_npx).unwrap(),
+            json!({
+                "command": "/Users/u/.nvm/versions/node/v22/bin/node",
+                "args": ["/Users/u/.nvm/versions/node/v22/bin/npx", "-y", "advisaur-mcp"],
+                "env": { "PATH": "/Users/u/.nvm/versions/node/v22/bin:/usr/bin" },
+            })
+        );
+        assert_eq!(
+            renamed_entry(&json!({ "command": "npx", "args": ["shelbymcp", "--db", "/data/m.db"], "env": { "A": "1" } })).unwrap(),
+            json!({ "command": "npx", "args": ["-y", "advisaur-mcp", "--db", "/data/m.db"], "env": { "A": "1" } })
+        );
+        assert_eq!(
+            renamed_entry(
+                &json!({ "command": "/bin/bash", "args": ["-l", "-c", "npx shelbymcp"] })
+            )
+            .unwrap(),
+            json!({ "command": "/bin/bash", "args": ["-l", "-c", "npx -y advisaur-mcp"] })
+        );
+        assert_eq!(
+            renamed_entry(&json!({ "command": "cmd", "args": ["/c", "npx", "-y", "shelbymcp"] }))
+                .unwrap(),
+            json!({ "command": "cmd", "args": ["/c", "npx", "-y", "advisaur-mcp"] })
+        );
+        // The old global binary has no renamed equivalent: it stays the user's.
+        assert_eq!(
+            renamed_entry(
+                &json!({ "command": "/Users/u/.nvm/versions/node/v22/bin/node",
+                                   "args": ["/Users/u/.nvm/versions/node/v22/bin/shelbymcp"] })
+            ),
+            None
+        );
+        assert_eq!(
+            renamed_entry(&json!({ "command": "/opt/shelby-mcp" })),
+            None
+        );
+    }
+
+    #[test]
+    fn both_keys_with_a_command_the_user_wrote_under_the_old_one_is_left_for_them() {
+        let home = TempHome::new();
+        let path = cursor_path(&home);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let before = serde_json::to_vec(&json!({ "mcpServers": {
+            "advisaur-mcp": portable_entry(),
+            "shelbymcp": { "command": "/opt/memory/shelby-mcp" },
+        } }))
+        .unwrap();
+        fs::write(&path, &before).unwrap();
+        assert!(matches!(
+            setup(Client::Cursor, &home.paths(), &FakeRunner::default()).unwrap(),
+            Change::ManualAction { .. }
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
     }
 
     #[test]
@@ -926,5 +1041,24 @@ mod tests {
             Change::ManualAction { .. }
         ));
         assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn codex_reads_escaped_keys_and_sub_tables_anywhere() {
+        assert_eq!(
+            toml_table(r#"[mcp_servers."shelby\u006dcp"]"#).unwrap(),
+            "mcp_servers.shelbymcp"
+        );
+        let home = TempHome::new();
+        let path = home.0.join(".codex/config.toml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "[mcp_servers.shelbymcp]\ncommand = \"npx\"\nargs = [\"shelbymcp\"]\n\n[mcp_servers.other]\ncommand = \"other\"\n\n[mcp_servers.shelbymcp.env]\nSHELBY_DB_PATH = \"/data/team.db\"\n",
+        )
+        .unwrap();
+        assert!(!is_old_setup_entry(
+            &codex_legacy_entry(&path).unwrap().unwrap()
+        ));
     }
 }

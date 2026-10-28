@@ -245,6 +245,18 @@ pub fn parse_with_env(
     if cfg.transport == Transport::Http && env("HOST").is_none() && !explicit_host {
         cfg.http_host = "0.0.0.0".into();
     }
+    // A key set but empty is a mistake, never a choice to run without authentication.
+    if cfg.transport == Transport::Http && cfg.api_key.is_none() {
+        let (name, legacy) = API_KEY_ENV;
+        if let Some(blank) = [name, legacy]
+            .into_iter()
+            .find(|key| env(key).is_some_and(|value| value.is_empty()))
+        {
+            return Err(format!(
+                "{blank} is set but empty. Set {name} to a long random secret, or unset it to run without authentication."
+            ));
+        }
+    }
     Ok(Cli::Serve(cfg))
 }
 
@@ -375,5 +387,20 @@ mod tests {
             panic!("expected serve")
         };
         assert_eq!(cfg.api_key, None);
+    }
+
+    #[test]
+    fn an_empty_api_key_stops_the_http_server() {
+        let blank = |key: &str| match key {
+            "ADVISAUR_API_KEY" => Some(String::new()),
+            _ => None,
+        };
+        let error = parse_with_env(vec!["--transport".into(), "http".into()], &blank).unwrap_err();
+        assert!(
+            error.contains("ADVISAUR_API_KEY is set but empty"),
+            "{error}"
+        );
+        // Stdio never uses the key, so it starts.
+        assert!(parse_with_env(vec![], &blank).is_ok());
     }
 }

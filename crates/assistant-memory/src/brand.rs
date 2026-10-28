@@ -62,14 +62,29 @@ fn is_real_dir(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
 }
 
+/// Whether the old folder has moved: it's gone, or it's the link the move left, to the renamed
+/// folder. A link the user made to somewhere else is theirs, and so is a real folder.
+pub fn legacy_dir_moved(home: &Path) -> bool {
+    let legacy = home.join(LEGACY_DATA_DIR_NAME);
+    let current = home.join(DATA_DIR_NAME);
+    if !current.is_dir() {
+        return false;
+    }
+    match std::fs::symlink_metadata(&legacy) {
+        Err(_) => true,
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            std::fs::read_link(&legacy).is_ok_and(|target| target == current)
+        }
+        Ok(_) => false,
+    }
+}
+
 /// A path inside the old folder, pointed into the renamed one once the folder has moved. Covers a
 /// database path a client set before the rename, and the moment between the move and the link
 /// that takes the old folder's place.
 pub fn redirect_legacy_path(home: &Path, path: &Path) -> PathBuf {
-    let legacy = home.join(LEGACY_DATA_DIR_NAME);
-    let current = home.join(DATA_DIR_NAME);
-    match path.strip_prefix(&legacy) {
-        Ok(rest) if current.is_dir() && !is_real_dir(&legacy) => current.join(rest),
+    match path.strip_prefix(home.join(LEGACY_DATA_DIR_NAME)) {
+        Ok(rest) if legacy_dir_moved(home) => home.join(DATA_DIR_NAME).join(rest),
         _ => path.to_path_buf(),
     }
 }
@@ -207,6 +222,20 @@ mod tests {
             redirect_legacy_path(&home, &legacy.join("memory.db")),
             legacy.join("memory.db")
         );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_the_user_made_to_their_own_folder_is_theirs() {
+        let home = home();
+        let theirs = home.join("team-memory");
+        std::fs::create_dir_all(&theirs).unwrap();
+        std::fs::create_dir_all(home.join(DATA_DIR_NAME)).unwrap();
+        std::os::unix::fs::symlink(&theirs, home.join(LEGACY_DATA_DIR_NAME)).unwrap();
+        let path = home.join(LEGACY_DATA_DIR_NAME).join("new.db");
+        assert_eq!(redirect_legacy_path(&home, &path), path);
+        assert_eq!(move_legacy_data_dir(&home), None);
         std::fs::remove_dir_all(&home).unwrap();
     }
 

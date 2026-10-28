@@ -40,7 +40,7 @@ Supported client names are:
 claude-code  claude-desktop  cursor  codex  devin  gemini  antigravity
 ```
 
-`devin` returns exit code `2` with its organization-managed MCP Marketplace route; there is no local Devin config file to edit. `windsurf` remains a separate compatibility command for the legacy local Windsurf config. Setup prefers the client's own CLI when that is the safe current route. JSON fallbacks merge only `mcpServers.advisaur-mcp` (replacing an entry the server had under its old name, `shelbymcp`), preserve unrelated keys and file permissions, use atomic replacement, and leave malformed files byte-identical with manual instructions. Exit code `2` means manual action is required.
+`devin` returns exit code `2` with its organization-managed MCP Marketplace route; there is no local Devin config file to edit. `windsurf` remains a separate compatibility command for the legacy local Windsurf config. Setup prefers the client's own CLI when that is the safe current route. JSON fallbacks merge only `mcpServers.advisaur-mcp` (moving an entry the server had under its old name, `shelbymcp`: one that ran the old package through npx is rewritten to run the new one with its settings, and any other moves as it is), preserve unrelated keys and file permissions, use atomic replacement, and leave malformed files byte-identical with manual instructions. Exit code `2` means manual action is required.
 
 Remove a fallback entry with:
 

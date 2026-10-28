@@ -36,42 +36,110 @@ pub const DISPLAY_NAME: &str = "Advisaur MCP";
 /// removes it, so no client is left with both.
 pub const LEGACY_SERVER_KEY: &str = "shelbymcp";
 
-/// Whether `entry` is a launch entry the old server's setup wrote, rather than one the user
-/// wrote: `npx [-y] shelbymcp` (through `cmd /c` on Windows), Cursor's `type: "stdio"` form of
-/// it, the absolute `node` running the global `shelbymcp` that setup wrote under nvm, or the
-/// global binary itself. An entry with anything besides a type, command and args (an `env`, say)
-/// is the user's.
+fn file_name(path: &str) -> String {
+    path.rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .to_ascii_lowercase()
+}
+
+fn string_args(entry: &Map<String, Value>) -> Option<Vec<String>> {
+    match entry.get("args") {
+        None => Some(Vec::new()),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| value.as_str().map(str::to_owned))
+            .collect(),
+        Some(_) => None,
+    }
+}
+
+/// An old entry rewritten to launch the renamed package. An entry that runs the old npm package
+/// through npx keeps its command, environment and other arguments; only the package changes,
+/// with `-y` so npx never asks. That covers npx itself, `cmd /c npx`, nvm's `node …/npx` (which
+/// v0.2.2 wrote, with a PATH) and a login shell's `npx shelbymcp` (v0.2.1). None for anything
+/// else, such as the old global binary (v0.2.3 and later, under nvm): no rename gives the user
+/// an equivalent, so the entry stays theirs.
+pub(crate) fn renamed_entry(entry: &Value) -> Option<Value> {
+    let mut entry = entry.as_object()?.clone();
+    if entry.get("type").is_some_and(|kind| kind != "stdio") {
+        return None;
+    }
+    let command = entry.get("command")?.as_str()?.to_string();
+    let mut args = string_args(&entry)?;
+    let is_npx = |path: &str| matches!(file_name(path).as_str(), "npx" | "npx.cmd");
+    let npx_args = if is_npx(&command) {
+        Some(0)
+    } else {
+        args.iter()
+            .position(|arg| is_npx(arg))
+            .map(|index| index + 1)
+    };
+    if let Some(start) = npx_args {
+        let package = start
+            + args[start..]
+                .iter()
+                .position(|arg| arg == LEGACY_SERVER_KEY)?;
+        args[package] = SERVER_KEY.into();
+        if !args[start..package]
+            .iter()
+            .any(|arg| arg == "-y" || arg == "--yes")
+        {
+            args.insert(package, "-y".into());
+        }
+    } else {
+        let shell = matches!(file_name(&command).as_str(), "bash" | "sh" | "zsh");
+        let (script, flags) = args.split_last_mut()?;
+        let runs_old_package = matches!(
+            script.split_whitespace().collect::<Vec<_>>().as_slice(),
+            ["npx", LEGACY_SERVER_KEY] | ["npx", "-y", LEGACY_SERVER_KEY]
+        );
+        if !(shell && flags.iter().any(|flag| flag == "-c") && runs_old_package) {
+            return None;
+        }
+        *script = format!("npx -y {SERVER_KEY}");
+    }
+    entry.insert("args".into(), Value::from(args));
+    Some(Value::Object(entry))
+}
+
+/// Whether `entry` is exactly what the old setup wrote for a plain install: `npx [-y] shelbymcp`,
+/// through `cmd /c` on Windows or a login shell (v0.2.1), with at most an empty `env` and Cursor's
+/// `type: "stdio"`. A client CLI can replace such an entry with its own stock one; anything more
+/// (an `env`, extra arguments, nvm's paths) is the user's to change.
 pub(crate) fn is_old_setup_entry(entry: &Value) -> bool {
     let Some(object) = entry.as_object() else {
         return false;
     };
-    if object
-        .keys()
-        .any(|key| !matches!(key.as_str(), "type" | "command" | "args"))
-        || object.get("type").is_some_and(|kind| kind != "stdio")
+    let empty_env = object
+        .get("env")
+        .is_none_or(|env| env.as_object().is_some_and(Map::is_empty));
+    if !empty_env
+        || object
+            .keys()
+            .any(|key| !matches!(key.as_str(), "type" | "command" | "args" | "env"))
     {
         return false;
     }
-    let Some(command) = object.get("command").and_then(Value::as_str) else {
+    if object.get("type").is_some_and(|kind| kind != "stdio") {
+        return false;
+    }
+    let (Some(command), Some(args)) = (
+        object.get("command").and_then(Value::as_str),
+        string_args(object),
+    ) else {
         return false;
     };
-    let args: Vec<&str> = match object.get("args") {
-        None => Vec::new(),
-        Some(Value::Array(values)) => match values.iter().map(Value::as_str).collect() {
-            Some(args) => args,
-            None => return false,
-        },
-        Some(_) => return false,
-    };
-    let file_name = |path: &str| path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let npx = |args: &[&str]| matches!(args, [LEGACY_SERVER_KEY] | ["-y", LEGACY_SERVER_KEY]);
     match command {
         "npx" => npx(&args),
         "cmd" => matches!(args.as_slice(), ["/c", "npx", rest @ ..] if npx(rest)),
-        _ if matches!(file_name(command).as_str(), "node" | "node.exe") => {
-            matches!(args.as_slice(), [script] if file_name(script) == LEGACY_SERVER_KEY)
-        }
-        _ => args.is_empty() && file_name(command) == LEGACY_SERVER_KEY,
+        "/bin/bash" | "bash" => matches!(
+            args.as_slice(),
+            ["-l", "-c", "npx shelbymcp" | "npx -y shelbymcp"]
+        ),
+        _ => false,
     }
 }
 
@@ -293,8 +361,8 @@ pub(crate) fn json_keys(path: &Path) -> Result<std::result::Result<Keys, String>
     }))
 }
 
-/// Writes the server's entry. An entry under the old key is replaced: by `entry` when the old
-/// setup wrote it (`is_old_setup_entry`), else moved as it is, since the user wrote it.
+/// Writes the server's entry. An entry under the old key moves to the new one, rewritten to run the
+/// renamed package when it ran the old one through npx (`renamed_entry`), else as it is.
 pub(crate) fn merge_json(path: &Path, entry: Value) -> Result<JsonChange> {
     let mut document = match load_document(path)? {
         Document::Object(document) => document,
@@ -304,17 +372,28 @@ pub(crate) fn merge_json(path: &Path, entry: Value) -> Result<JsonChange> {
         Ok(servers) => servers,
         Err(message) => return Ok(JsonChange::ManualAction(message)),
     };
-    let legacy = servers.remove(LEGACY_SERVER_KEY);
-    if servers.contains_key(SERVER_KEY) {
-        if legacy.is_none() {
-            return Ok(JsonChange::AlreadyConfigured);
+    match (
+        servers.contains_key(SERVER_KEY),
+        servers.get(LEGACY_SERVER_KEY).cloned(),
+    ) {
+        (true, None) => return Ok(JsonChange::AlreadyConfigured),
+        // Both: the old one goes only when the old setup wrote it; one the user wrote is theirs.
+        (true, Some(old)) if !is_old_setup_entry(&old) => {
+            return Ok(JsonChange::ManualAction(format!(
+                "{} has both {SERVER_KEY} and an entry you set under {LEGACY_SERVER_KEY}; remove the one you don't need",
+                path.display()
+            )));
         }
-    } else {
-        let value = match legacy {
-            Some(own) if !is_old_setup_entry(&own) => own,
-            _ => entry,
-        };
-        servers.insert(SERVER_KEY.into(), value);
+        (true, Some(_)) => {
+            servers.remove(LEGACY_SERVER_KEY);
+        }
+        (false, Some(old)) => {
+            servers.remove(LEGACY_SERVER_KEY);
+            servers.insert(SERVER_KEY.into(), renamed_entry(&old).unwrap_or(old));
+        }
+        (false, None) => {
+            servers.insert(SERVER_KEY.into(), entry);
+        }
     }
     atomic_write_json(path, document)?;
     Ok(JsonChange::Changed)

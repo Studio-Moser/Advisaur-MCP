@@ -18,3 +18,15 @@ test("a lost pass, a missing case or a fallen metric fails", () => {
   assert.match(failures.join("\n"), /case b is missing/);
   assert.match(failures.join("\n"), /recall_at_5 fell/);
 });
+
+test("a changed contract output or policy fails, the renamed header doesn't", () => {
+  const with_ = (output, policy = 1) => ({
+    policy_version: policy,
+    schema_version: 1,
+    cases: [{ id: "a", passed: true, output, estimated_tokens: output.length }],
+    aggregates: {},
+  });
+  assert.deepEqual(compareRenamed(with_("## Shelby memory context\nX"), with_("## Advisaur memory context\nX")), []);
+  assert.match(compareRenamed(with_("## Shelby memory context\nX"), with_("## Advisaur memory context\nY")).join(), /case a output changed/);
+  assert.match(compareRenamed(with_("X"), with_("X", 2)).join(), /policy version changed/);
+});
