@@ -30,3 +30,16 @@ test("a changed contract output or policy fails, the renamed header doesn't", ()
   assert.match(compareRenamed(with_("## Shelby memory context\nX"), with_("## Advisaur memory context\nY")).join(), /case a output changed/);
   assert.match(compareRenamed(with_("X"), with_("X", 2)).join(), /policy version changed/);
 });
+
+test("a changed dataset fails; the renamed corpus's new label doesn't", () => {
+  const run = (corpusRevision, datasetSha) => ({
+    cases: [],
+    aggregates: {},
+    provenance: [
+      { source: "repository:tests/fixtures/Contract Corpus-v1.json", revision: corpusRevision, license: "MIT" },
+      { source: "huggingface:longmemeval", sha256: datasetSha, license: "MIT" },
+    ],
+  });
+  assert.deepEqual(compareRenamed(run("shelby-contract-v1", "a"), run("contract-v1", "a")), []);
+  assert.match(compareRenamed(run("shelby-contract-v1", "a"), run("contract-v1", "b")).join(), /inputs changed/);
+});

@@ -363,8 +363,8 @@ pub fn setup(
                     message: format!(
                         "The {LEGACY_SERVER_KEY} entry in {} has settings of yours (a command, arguments or an \
                          environment) that the client's CLI can't carry over. Rename its key to {SERVER_KEY}, \
-                         and its {LEGACY_SERVER_KEY} package to {SERVER_KEY} if it runs one, or remove it and run \
-                         setup again.",
+                         its {LEGACY_SERVER_KEY} package to {SERVER_KEY} if it runs one, and any SHELBY_ \
+                         variables to their new names, or remove it and run setup again.",
                         path.display()
                     ),
                 });
@@ -917,6 +917,25 @@ mod tests {
         for entry in &own {
             assert!(!crate::config::is_old_setup_entry(entry), "{entry}");
         }
+    }
+
+    #[test]
+    fn a_rewritten_entry_takes_the_new_variable_names_and_keeps_npx_options_before_a_separator() {
+        use crate::config::renamed_entry;
+        assert_eq!(
+            renamed_entry(&json!({ "command": "npx", "args": ["--", "shelbymcp"] })).unwrap()["args"],
+            json!(["-y", "--", "advisaur-mcp"])
+        );
+        let renamed = renamed_entry(&json!({
+            "command": "npx",
+            "args": ["shelbymcp"],
+            "env": { "SHELBY_DB_PATH": "/data/team.db", "SHELBY_API_KEY": "k", "OTHER": "1" },
+        }))
+        .unwrap();
+        assert_eq!(
+            renamed["env"],
+            json!({ "ADVISAUR_DB_PATH": "/data/team.db", "ADVISAUR_API_KEY": "k", "OTHER": "1" })
+        );
     }
 
     #[test]

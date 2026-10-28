@@ -283,3 +283,38 @@ fn the_old_data_folder_moves_once_when_the_default_database_is_used() {
         stderr(&again)
     );
 }
+
+fn repair_with_db(home: &TempHome, db: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_advisaur-mcp"))
+        .arg("repair-projects")
+        .env("HOME", &home.0)
+        .env("USERPROFILE", &home.0)
+        .env("ADVISAUR_DB_PATH", db)
+        .env("PATH", "")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_path_below_the_old_folder_can_make_its_own_folders() {
+    let home = TempHome::new();
+    let legacy = home.0.join(".shelbymcp");
+    fs::create_dir_all(&legacy).unwrap();
+    let nested = legacy.join("projects/new/memory.db");
+    let output = repair_with_db(&home, &nested);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(nested.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_missing_drive_fails_rather_than_start_a_new_database() {
+    let home = TempHome::new();
+    let legacy = home.0.join(".shelbymcp");
+    std::os::unix::fs::symlink(home.0.join("unmounted/memory"), &legacy).unwrap();
+    let explicit = repair_with_db(&home, &legacy.join("memory.db"));
+    assert!(!explicit.status.success());
+    let default = home.run(&["repair-projects"]);
+    assert!(!default.status.success(), "{}", stderr(&default));
+    assert!(!home.0.join(".studiomoser-assistant-mcp/memory.db").exists());
+}

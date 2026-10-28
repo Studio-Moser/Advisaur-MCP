@@ -30,6 +30,14 @@ pub type Result<T> = std::result::Result<T, IntegrationError>;
 /// `assistant_memory::brand::SERVER_NAME`; this crate depends on nothing, so a test in
 /// `assistant-mcp` checks they agree.
 pub const SERVER_KEY: &str = "advisaur-mcp";
+/// The server's variables under their old names and their current ones (`assistant-mcp`'s
+/// `config` holds the same pairs).
+const LEGACY_ENV: &[(&str, &str)] = &[
+    ("SHELBY_DB_PATH", "ADVISAUR_DB_PATH"),
+    ("SHELBY_TRANSPORT", "ADVISAUR_TRANSPORT"),
+    ("SHELBY_API_KEY", "ADVISAUR_API_KEY"),
+];
+
 /// The server in prose and messages (`assistant_memory::brand::DISPLAY_NAME`).
 pub const DISPLAY_NAME: &str = "Advisaur MCP";
 /// The key the server had before the rename. Status counts it, setup replaces it, and uninstall
@@ -85,7 +93,12 @@ pub(crate) fn renamed_entry(entry: &Value) -> Option<Value> {
             .iter()
             .any(|arg| arg == "-y" || arg == "--yes")
         {
-            args.insert(package, "-y".into());
+            // Before an option separator, where npx still reads options.
+            let at = args[start..package]
+                .iter()
+                .position(|arg| arg == "--")
+                .map_or(package, |separator| start + separator);
+            args.insert(at, "-y".into());
         }
     } else {
         let shell = matches!(file_name(&command).as_str(), "bash" | "sh" | "zsh");
@@ -100,6 +113,16 @@ pub(crate) fn renamed_entry(entry: &Value) -> Option<Value> {
         *script = format!("npx -y {SERVER_KEY}");
     }
     entry.insert("args".into(), Value::from(args));
+    // The old variable names are read for one release only; the entry takes the new ones.
+    if let Some(Value::Object(env)) = entry.get_mut("env") {
+        for (old, new) in LEGACY_ENV {
+            if !env.contains_key(*new)
+                && let Some(value) = env.remove(*old)
+            {
+                env.insert((*new).into(), value);
+            }
+        }
+    }
     Some(Value::Object(entry))
 }
 

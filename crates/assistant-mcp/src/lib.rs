@@ -17,13 +17,30 @@ pub fn open_memory(path: &str) -> assistant_memory::Result<assistant_memory::Mem
         // second database beside the moved one.
         use assistant_memory::brand::{DATA_DIR_NAME, LEGACY_DATA_DIR_NAME, redirect_legacy_path};
         let home = config::home_dir();
+        let legacy = home.join(LEGACY_DATA_DIR_NAME);
         let path = redirect_legacy_path(&home, std::path::Path::new(path));
-        match path.strip_prefix(home.join(LEGACY_DATA_DIR_NAME)) {
-            // No old folder at all: the path means the renamed one.
-            Ok(rest) if !home.join(LEGACY_DATA_DIR_NAME).exists() => {
+        match path.strip_prefix(&legacy) {
+            // No old folder at all, not even a link: the path means the renamed one. (A link
+            // whose target is missing, such as an unmounted drive, is still the user's folder.)
+            Ok(rest) if std::fs::symlink_metadata(&legacy).is_err() => {
                 assistant_memory::Memory::open(home.join(DATA_DIR_NAME).join(rest))
             }
-            Ok(_) => assistant_memory::Memory::open_existing_dir(path),
+            Ok(rest) => {
+                // Folders below it may be made one at a time, which fails if the old folder
+                // itself has gone; it's never made again.
+                let mut folder = legacy.clone();
+                if let Some(parent) = rest.parent() {
+                    for part in parent.components() {
+                        folder.push(part);
+                        if let Err(error) = std::fs::create_dir(&folder)
+                            && error.kind() != std::io::ErrorKind::AlreadyExists
+                        {
+                            return Err(error.into());
+                        }
+                    }
+                }
+                assistant_memory::Memory::open_existing_dir(path)
+            }
             Err(_) => assistant_memory::Memory::open(path),
         }
     }

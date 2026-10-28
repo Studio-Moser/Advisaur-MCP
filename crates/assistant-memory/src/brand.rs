@@ -50,7 +50,8 @@ pub const LEGACY_DATA_DIR_NAME: &str = ".shelbymcp";
 pub fn data_dir(home: &Path) -> PathBuf {
     let current = home.join(DATA_DIR_NAME);
     let legacy = home.join(LEGACY_DATA_DIR_NAME);
-    if !current.exists() && legacy.exists() {
+    // The old folder's own entry, not its target: a link to an unmounted drive is still there.
+    if !current.exists() && std::fs::symlink_metadata(&legacy).is_ok() {
         legacy
     } else {
         current

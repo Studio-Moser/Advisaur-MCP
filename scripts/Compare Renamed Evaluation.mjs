@@ -45,6 +45,18 @@ export function compareRenamed(base, candidate) {
   if (base.schema_version !== candidate.schema_version) {
     failures.push(`results schema changed from ${base.schema_version} to ${candidate.schema_version}`);
   }
+  // Every input but the renamed contract corpus must be the same; that one keeps its source and
+  // license (its name, revision and hash follow the rename).
+  const corpus = (entry) => entry.source?.endsWith("Contract Corpus-v1.json");
+  const inputs = (results) => (results.provenance ?? []).filter((entry) => !corpus(entry));
+  if (JSON.stringify(inputs(base)) !== JSON.stringify(inputs(candidate))) {
+    failures.push("the evaluation's inputs changed");
+  }
+  const corpusOf = (results) => (results.provenance ?? []).find(corpus);
+  const [baseCorpus, candidateCorpus] = [corpusOf(base), corpusOf(candidate)];
+  if (baseCorpus?.source !== candidateCorpus?.source || baseCorpus?.license !== candidateCorpus?.license) {
+    failures.push("the contract corpus changed source or license");
+  }
   const byId = (results) => new Map(results.cases.map((entry) => [entry.id, entry]));
   const baseCases = byId(base);
   const candidateCases = byId(candidate);
