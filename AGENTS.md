@@ -4,9 +4,9 @@ ShelbyMCP is a Rust workspace that ships a local knowledge-graph memory engine, 
 
 ## Related repositories
 
-- Product strategy, ADRs and specs: `../Docs` (Studio-Moser/Shelby-Docs) — `README.md` for intent, `Engineering/Decisions/0001-memory-server-architecture-contract.md` for the memory contract this workspace implements.
-- Historical consumer: `../Apps` (Studio-Moser/Shelby-App) is abandoned; its pinned crate embedding is not the active app architecture.
-- Active client: `../MacOS` (Studio-Moser/Shelby-MacOS), the self-contained native Swift/SwiftUI app with its own memory engine. Shelby-MCP remains a separate, related product. Interoperability is governed by Docs ADR-0009 and Shelby-Docs#623; never assume a shared store or unsynchronized dual writers.
+- Product strategy, ADRs and specs: `../Docs` (Studio-Moser/Advisaur-Docs) — `README.md` for intent, `Engineering/Decisions/0001-memory-server-architecture-contract.md` for the memory contract this workspace implements.
+- Historical consumer: `../Apps` (Studio-Moser/Shelby-App, archived) is abandoned; its pinned crate embedding is not the active app architecture.
+- Active client: `../MacOS` (Studio-Moser/Advisaur-MacOS), the self-contained native Swift/SwiftUI app with its own memory engine. Shelby-MCP remains a separate, related product. Interoperability is governed by Docs ADR-0009 and Advisaur-Docs#623; never assume a shared store or unsynchronized dual writers.
 
 ## Repository map
 
