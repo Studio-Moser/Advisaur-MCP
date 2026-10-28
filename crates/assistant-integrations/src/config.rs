@@ -174,7 +174,10 @@ fn atomic_write_json(path: &Path, document: Map<String, Value>) -> Result<()> {
         .file_name()
         .map(|value| value.to_string_lossy())
         .unwrap_or_default();
-    let temporary = parent.join(format!(".{name}.shelby-{}-{nonce}.tmp", std::process::id()));
+    let temporary = parent.join(format!(
+        ".{name}.assistant-{}-{nonce}.tmp",
+        std::process::id()
+    ));
     let result = (|| -> Result<()> {
         let mut file = OpenOptions::new()
             .create_new(true)

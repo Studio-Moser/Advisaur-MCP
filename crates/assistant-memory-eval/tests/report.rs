@@ -24,7 +24,7 @@ fn manifest() -> ResultManifest {
         configuration: BTreeMap::new(),
         cases: vec![CaseResult {
             id: "failed-contract".into(),
-            suite: "shelby-contract".into(),
+            suite: "contract".into(),
             category: "scope".into(),
             passed: false,
             ranked_ids: vec![],

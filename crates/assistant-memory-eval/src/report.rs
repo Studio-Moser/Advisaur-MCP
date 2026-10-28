@@ -23,7 +23,7 @@ pub fn render_run_report(manifest: &ResultManifest) -> Result<String, ReportErro
         "FAIL"
     };
     let mut report = format!(
-        "# Shelby Memory Evaluation\n\nStatus: **{status}**\n\n\
+        "# Memory Evaluation\n\nStatus: **{status}**\n\n\
          | Metric | Value |\n| --- | ---: |\n\
          | Recall@5 | {:.6} |\n| NDCG@10 | {:.6} |\n\
          | Precision@5 | {:.6} |\n| MRR@10 | {:.6} |\n\n\
@@ -60,7 +60,7 @@ pub fn render_run_report(manifest: &ResultManifest) -> Result<String, ReportErro
 pub fn render_comparison_report(comparison: &ComparisonReport) -> String {
     let status = if comparison.passed { "PASS" } else { "FAIL" };
     let mut report = format!(
-        "# Shelby Memory Evaluation Gate\n\nStatus: **{status}**\n\n\
+        "# Memory Evaluation Gate\n\nStatus: **{status}**\n\n\
          Base code: `{}`  \nCandidate code: `{}`  \n\
          Base digest: `{}`  \nCandidate digest: `{}`\n\n",
         comparison.base_code_sha,

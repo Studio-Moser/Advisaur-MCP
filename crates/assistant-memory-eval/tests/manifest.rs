@@ -11,7 +11,7 @@ fn sample_manifest() -> ResultManifest {
         suite_version: "pr-v1".into(),
         policy_version: 1,
         provenance: vec![DatasetProvenance {
-            name: "shelby-contract".into(),
+            name: "contract".into(),
             source: "repository".into(),
             revision: "v1".into(),
             sha256: "abc".into(),
@@ -24,7 +24,7 @@ fn sample_manifest() -> ResultManifest {
         configuration: BTreeMap::from([("cutoff".into(), "5".into())]),
         cases: vec![CaseResult {
             id: "scope-1".into(),
-            suite: "shelby-contract".into(),
+            suite: "contract".into(),
             category: "scope".into(),
             passed: true,
             ranked_ids: vec!["expected".into()],

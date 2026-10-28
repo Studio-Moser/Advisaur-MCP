@@ -104,7 +104,7 @@ fn help_documents_the_offline_fetch_run_compare_workflow() {
 
 #[test]
 fn compare_command_writes_machine_and_human_readable_artifacts() {
-    let directory = std::env::temp_dir().join(format!("shelby-eval-cli-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("assistant-eval-cli-{}", Uuid::new_v4()));
     fs::create_dir(&directory).unwrap();
     let result = serde_json::to_vec_pretty(&manifest()).unwrap();
     for name in ["base.json", "candidate.json", "repeat.json"] {
@@ -149,7 +149,7 @@ fn compare_command_writes_machine_and_human_readable_artifacts() {
 
 #[test]
 fn run_with_a_missing_cache_fails_offline_without_creating_dataset_data() {
-    let directory = std::env::temp_dir().join(format!("shelby-eval-offline-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("assistant-eval-offline-{}", Uuid::new_v4()));
     fs::create_dir(&directory).unwrap();
     let missing = directory.join("missing.json");
     let output = Command::new(env!("CARGO_BIN_EXE_assistant-memory-eval"))

@@ -222,7 +222,7 @@ fn hash_text(h: &mut Sha256, s: &str) {
 }
 pub(super) fn fingerprint(p: &ProjectRow, aliases: &[Alias]) -> String {
     let mut h = Sha256::new();
-    h.update(b"shelby-project-membership-snapshot-v1\0");
+    h.update(b"assistant-project-membership-snapshot-v1\0");
     for value in [&p.slug, &p.display_name, &p.member_repos, &p.member_paths] {
         hash_text(&mut h, value);
     }

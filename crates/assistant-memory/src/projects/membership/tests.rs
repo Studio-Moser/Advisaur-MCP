@@ -444,7 +444,8 @@ fn stored_sql_null_membership_is_unavailable_even_when_schema_declares_notnull()
 }
 #[test]
 fn literal_fingerprint_vectors_cover_sql_types_lengths_all_columns_and_null_alias() {
-    // Independent Python hashlib/uuid/struct derivation retained in the review's Vector Provenance.py.
+    // Independent Python hashlib/uuid/struct derivation retained in the review's Vector Provenance.py;
+    // re-pinned when ADR-0012 renamed the snapshot label (the construction is unchanged).
     let (m, id) = fixture();
     m.conn.execute("UPDATE projects SET display_name=?1,member_repos='[ \"a\", \"a\" ]',member_paths='[]',created_at='c',updated_at='u'",["NUL\0Name"]).unwrap();
     m.conn
@@ -455,14 +456,14 @@ fn literal_fingerprint_vectors_cover_sql_types_lengths_all_columns_and_null_alia
         .unwrap();
     assert_eq!(
         current(&m, &id).fingerprint(),
-        "30f86170b4dee86bed9141cf2321a74b6e28bf69462383a25af89923ac9ed066"
+        "791aadd301407ce13f567ff08d9c7aaf72857d29adc2f31374ecdaf5de7f0f07"
     );
     m.conn
         .execute("UPDATE project_slug_aliases SET retired_at='r'", [])
         .unwrap();
     assert_eq!(
         current(&m, &id).fingerprint(),
-        "3ae3629289a8046b8951cba46636bb0974c384e3b1ac6105bd8f0ae32bd85014"
+        "55c97f54c5fb445e6b784452f173530cecd21388ed7e95fdc02874b4ca56328b"
     );
 }
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperation};
@@ -566,7 +567,7 @@ fn failed_cleanup_returns_unusable_and_never_rolls_back_a_later_caller_transacti
     }
 }
 fn disk_fixture() -> (Memory, String, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!("shelby-membership-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("assistant-membership-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&dir).unwrap();
     #[cfg(unix)]
     {
@@ -714,7 +715,8 @@ fn actual_immutable_typescript_fixture_supports_membership_without_conversion() 
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/TypeScript-v18.sqlite");
     let original = std::fs::read(&source).unwrap();
-    let dir = std::env::temp_dir().join(format!("shelby-membership-ts-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("assistant-membership-ts-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&dir).unwrap();
     let path = dir.join("memory.db");
     std::fs::write(&path, &original).unwrap();

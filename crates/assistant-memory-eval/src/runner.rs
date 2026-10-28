@@ -83,7 +83,7 @@ pub fn build_result_manifest(
     for case in contract
         .cases
         .iter()
-        .filter(|case| case.suite == "shelby-hard-confuser")
+        .filter(|case| case.suite == crate::contract::HARD_CONFUSER_SUITE)
     {
         let metrics = case
             .metrics

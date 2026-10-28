@@ -39,7 +39,7 @@ fn manifest(recall: f64, ndcg: f64) -> ResultManifest {
         cases: vec![
             CaseResult {
                 id: "contract-1".into(),
-                suite: "shelby-contract".into(),
+                suite: "contract".into(),
                 category: "scope".into(),
                 passed: true,
                 ranked_ids: vec!["a".into()],

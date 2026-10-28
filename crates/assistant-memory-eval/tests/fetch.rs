@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 fn temporary_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("shelby-memory-eval-{}.json", Uuid::new_v4()))
+    std::env::temp_dir().join(format!("assistant-memory-eval-{}.json", Uuid::new_v4()))
 }
 
 fn manifest(content: &[u8], license: &str) -> LongMemEvalManifest {
@@ -51,7 +51,7 @@ fn fetch_rejects_an_unapproved_license_before_using_the_cache() {
 
 #[test]
 fn fetch_downloads_to_a_partial_file_then_verifies_the_result() {
-    let directory = std::env::temp_dir().join(format!("shelby-fetch-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("assistant-fetch-{}", Uuid::new_v4()));
     fs::create_dir(&directory).unwrap();
     let source = directory.join("source.json");
     let target = directory.join("cache.json");

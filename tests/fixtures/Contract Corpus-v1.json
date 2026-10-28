@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "suite_version": "shelby-contract-v1",
+  "suite_version": "contract-v1",
   "projects": ["shelby", "other-project", "budget-project"],
   "thoughts": [
     {

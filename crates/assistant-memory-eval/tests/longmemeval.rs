@@ -41,7 +41,7 @@ fn dataset_file() -> PathBuf {
 }
 
 fn dataset_file_with(content: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("shelby-lme-{}.json", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("assistant-lme-{}.json", uuid::Uuid::new_v4()));
     std::fs::write(&path, content).unwrap();
     path
 }

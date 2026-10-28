@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn detects_marker_root_and_origin() {
-        let root = std::env::temp_dir().join(format!("shelby-detect-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("assistant-detect-{}", uuid::Uuid::new_v4()));
         let nested = root.join("a").join("b");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::create_dir_all(root.join(".git")).unwrap();
@@ -102,7 +102,8 @@ mod tests {
 
     #[test]
     fn worktree_gitdir_pointer_is_followed() {
-        let base = std::env::temp_dir().join(format!("shelby-detect-wt-{}", uuid::Uuid::new_v4()));
+        let base =
+            std::env::temp_dir().join(format!("assistant-detect-wt-{}", uuid::Uuid::new_v4()));
         let main = base.join("main");
         let wt = base.join("wt");
         std::fs::create_dir_all(main.join(".git").join("worktrees").join("wt")).unwrap();
@@ -127,7 +128,8 @@ mod tests {
 
     #[test]
     fn markerless_dir_is_none() {
-        let dir = std::env::temp_dir().join(format!("shelby-detect-none-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("assistant-detect-none-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         // temp dirs live under /var or /tmp which carry no markers up to root
         assert!(detect_project(&dir).is_none());

@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 const CONTRACT_FIXTURE: &str = include_str!("../../../tests/fixtures/Contract Corpus-v1.json");
 const PUBLIC_MANIFEST: &str = include_str!("../../../tests/fixtures/LongMemEval PR-v1.json");
 const DEFAULT_POLICY: &str = include_str!("../../../tests/fixtures/Memory Eval Policy-v1.json");
-const USAGE: &str = "Shelby deterministic memory evaluation\n\n\
+const USAGE: &str = "Deterministic memory evaluation\n\n\
 Usage:\n\
   assistant-memory-eval fetch longmemeval-pr --cache PATH\n\
   assistant-memory-eval run --suite pr --dataset PATH --output DIR [--policy PATH] [--code-sha SHA]\n\
@@ -85,7 +85,7 @@ fn run_command(args: &[String]) -> Result<bool, Box<dyn Error>> {
 
     let provenance = vec![
         DatasetProvenance {
-            name: "Shelby contract corpus".into(),
+            name: "Contract corpus".into(),
             source: "repository:tests/fixtures/Contract Corpus-v1.json".into(),
             revision: contract.suite_version.clone(),
             sha256: sha256(CONTRACT_FIXTURE.as_bytes()),

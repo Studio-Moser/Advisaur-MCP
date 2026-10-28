@@ -14,7 +14,7 @@ struct TempHome(PathBuf);
 impl TempHome {
     fn new() -> Self {
         let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("shelby-cli-{}-{id}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("assistant-cli-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }

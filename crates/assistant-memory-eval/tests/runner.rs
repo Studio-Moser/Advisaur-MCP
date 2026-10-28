@@ -33,7 +33,7 @@ fn public_case(id: &str, category: &str, recall: f64, ndcg: f64) -> CaseResult {
 fn contract_case() -> CaseResult {
     CaseResult {
         id: "contract".into(),
-        suite: "shelby-contract".into(),
+        suite: "contract".into(),
         category: "scope".into(),
         passed: true,
         ranked_ids: vec!["thought".into()],
@@ -50,7 +50,7 @@ fn contract_case() -> CaseResult {
 
 fn hard_confuser_case() -> CaseResult {
     let mut case = public_case("hard", "same-topic-wrong-project", 1.0, 1.0);
-    case.suite = "shelby-hard-confuser".into();
+    case.suite = "hard-confuser".into();
     case
 }
 

@@ -25,6 +25,11 @@ pub use chats::{
 
 const MAX_BYTES: usize = 50 * 1024 * 1024;
 const POLICY_VERSION: i64 = 1;
+/// The archived Rust app's import contract for the Swift app's data keeps the names it was
+/// written with (ADR-0012 A3): the archive format (`shelby-swift-migration`, from
+/// `shelby-swift`), the ledger tables (`BATCHES`, `ENTITIES`) and the `shelby-swift-*` labels
+/// its stored IDs and fingerprints derive from. A new name would give an imported database
+/// second IDs, or hide the ledger that says it was imported.
 const PRODUCT: &str = "shelby-swift";
 
 #[derive(Debug, thiserror::Error)]

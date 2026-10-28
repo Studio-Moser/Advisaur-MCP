@@ -8,7 +8,7 @@ const FIXTURE: &str = include_str!("../../../tests/fixtures/Contract Corpus-v1.j
 fn contract_suite_reseeds_each_case_in_a_fresh_store_and_meets_exact_expectations() {
     let result = run_contract_suite(FIXTURE).expect("valid contract suite");
 
-    assert_eq!(result.suite_version, "shelby-contract-v1");
+    assert_eq!(result.suite_version, "contract-v1");
     assert_eq!(result.cases.len(), 58);
     assert!(
         result.cases.iter().all(|case| case.passed),
@@ -23,7 +23,7 @@ fn contract_suite_reseeds_each_case_in_a_fresh_store_and_meets_exact_expectation
         result
             .cases
             .iter()
-            .filter(|case| case.suite == "shelby-contract")
+            .filter(|case| case.suite == "contract")
             .map(|case| case.output["mode"].as_str().unwrap_or("non-search"))
             .collect::<Vec<_>>(),
         vec![
@@ -40,7 +40,7 @@ fn contract_suite_reseeds_each_case_in_a_fresh_store_and_meets_exact_expectation
     for case in result
         .cases
         .iter()
-        .filter(|case| case.suite == "shelby-hard-confuser")
+        .filter(|case| case.suite == "hard-confuser")
     {
         *hard_confuser_counts
             .entry(case.category.as_str())

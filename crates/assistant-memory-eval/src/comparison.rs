@@ -189,7 +189,7 @@ pub fn compare(
     }
 
     for case in candidate.cases.iter().filter(|case| !case.passed) {
-        let suite = if case.suite == "shelby-contract" {
+        let suite = if crate::contract::is_project_suite(&case.suite) {
             "contract"
         } else {
             "public"
@@ -200,13 +200,13 @@ pub fn compare(
     let base_contracts: BTreeMap<_, _> = base
         .cases
         .iter()
-        .filter(|case| case.suite.starts_with("shelby-"))
+        .filter(|case| crate::contract::is_project_suite(&case.suite))
         .map(|case| (case.id.as_str(), case))
         .collect();
     let candidate_contracts: BTreeMap<_, _> = candidate
         .cases
         .iter()
-        .filter(|case| case.suite.starts_with("shelby-"))
+        .filter(|case| crate::contract::is_project_suite(&case.suite))
         .map(|case| (case.id.as_str(), case))
         .collect();
     for id in base_contracts

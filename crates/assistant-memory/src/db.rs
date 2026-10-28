@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn opens_file_db_in_wal_and_migrates() {
-        let dir = std::env::temp_dir().join(format!("shelby-memory-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("assistant-memory-{}", uuid::Uuid::new_v4()));
         let m = Memory::open(dir.join("nested").join("memory.db")).unwrap();
         let mode: String = m
             .conn

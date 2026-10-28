@@ -5,7 +5,8 @@ use regex::Regex;
 use rusqlite::{Connection, functions::FunctionFlags};
 use std::sync::OnceLock;
 
-pub(crate) const ACTIVE_SQL: &str = "shelby_edge_active_v1(e.valid_from, e.valid_until, @edge_now)";
+pub(crate) const ACTIVE_SQL: &str =
+    "assistant_edge_active_v1(e.valid_from, e.valid_until, @edge_now)";
 fn invalid(field: &str) -> Error {
     Error::InvalidInput(format!(
         "Invalid {field}; use a calendar-valid RFC3339 instant (legacy UTC bounds may use YYYY-MM-DD HH:MM:SS), with up to nine fractional digits"
@@ -56,7 +57,7 @@ pub(crate) fn ensure_sql_function(conn: &Connection) -> Result<()> {
     let required = FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
     let existing = {
         let mut stmt = conn.prepare(
-            "SELECT narg, flags FROM pragma_function_list WHERE name = 'shelby_edge_active_v1'",
+            "SELECT narg, flags FROM pragma_function_list WHERE name = 'assistant_edge_active_v1'",
         )?;
         stmt.query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i32>(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?
@@ -73,7 +74,7 @@ pub(crate) fn ensure_sql_function(conn: &Connection) -> Result<()> {
         ));
     }
     conn.create_scalar_function(
-        "shelby_edge_active_v1",
+        "assistant_edge_active_v1",
         3,
         required | FunctionFlags::SQLITE_UTF8,
         |ctx| {
@@ -172,7 +173,7 @@ mod tests {
             assert!(rows.next().unwrap().is_some());
             ensure_sql_function(&conn).unwrap();
             ensure_sql_function(&conn).unwrap();
-            let sql = "SELECT shelby_edge_active_v1(?1,?2,?3)";
+            let sql = "SELECT assistant_edge_active_v1(?1,?2,?3)";
             for (start, end) in [
                 (None, None),
                 (Some(NOW), Some(NOW)),
@@ -207,9 +208,11 @@ mod tests {
             let conn = Connection::open(&path).unwrap();
             ensure_sql_function(&conn).unwrap();
             assert!(
-                conn.query_row("SELECT shelby_edge_active_v1(NULL,NULL,?1)", [NOW], |r| {
-                    r.get::<_, bool>(0)
-                })
+                conn.query_row(
+                    "SELECT assistant_edge_active_v1(NULL,NULL,?1)",
+                    [NOW],
+                    |r| { r.get::<_, bool>(0) }
+                )
                 .unwrap()
             );
         }
@@ -220,7 +223,7 @@ mod tests {
     fn conflicting_reserved_function_is_not_overwritten() {
         let conn = Connection::open_in_memory().unwrap();
         conn.create_scalar_function(
-            "shelby_edge_active_v1",
+            "assistant_edge_active_v1",
             1,
             rusqlite::functions::FunctionFlags::SQLITE_UTF8,
             |_| Ok(false),

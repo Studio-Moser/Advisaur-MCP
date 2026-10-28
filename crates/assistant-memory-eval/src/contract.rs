@@ -15,6 +15,16 @@ use uuid::Uuid;
 use crate::manifest::{CaseResult, relevant_ranks};
 use crate::metrics::score_pr_ranking;
 
+/// The project-owned suites, beside the public datasets (ADR-0012 renamed them from
+/// `shelby-contract` and `shelby-hard-confuser`).
+pub const CONTRACT_SUITE: &str = "contract";
+pub const HARD_CONFUSER_SUITE: &str = "hard-confuser";
+
+/// Whether a case belongs to a project-owned suite rather than a public dataset.
+pub fn is_project_suite(suite: &str) -> bool {
+    suite == CONTRACT_SUITE || suite == HARD_CONFUSER_SUITE
+}
+
 #[derive(Debug, Error)]
 pub enum ContractError {
     #[error(transparent)]
@@ -453,7 +463,7 @@ fn run_case(suite: &ContractSuite, case: &ContractCase) -> Result<CaseResult, Co
     let ranks = relevant_ranks(&ranked_ids, &relevant_ids);
     Ok(CaseResult {
         id: case.id.clone(),
-        suite: "shelby-contract".into(),
+        suite: CONTRACT_SUITE.into(),
         category: case.category.clone(),
         passed: failures.is_empty(),
         ranked_ids,
@@ -551,7 +561,7 @@ fn run_hard_confuser_case(case: &HardConfuserCase) -> Result<CaseResult, Contrac
 
     Ok(CaseResult {
         id: case.id.clone(),
-        suite: "shelby-hard-confuser".into(),
+        suite: HARD_CONFUSER_SUITE.into(),
         category: case.scenario.category().into(),
         passed: failures.is_empty(),
         ranked_ids: ranked_ids.clone(),
@@ -597,6 +607,8 @@ fn insert_hard_confuser_thought(
 fn stable_hard_confuser_id(case_id: &str, role: &str) -> String {
     Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
+        // The derivation input keeps its old name: it seeds the corpus's synthetic vectors,
+        // so a new one would move every number the evaluation reports.
         format!("shelby:{case_id}:{role}").as_bytes(),
     )
     .to_string()
