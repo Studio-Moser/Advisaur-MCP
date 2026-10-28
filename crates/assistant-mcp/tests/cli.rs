@@ -156,10 +156,10 @@ fn unavailable_cli_returns_manual_action_exit_two() {
 #[test]
 fn repair_projects_dry_run_then_apply_uses_the_rust_engine() {
     let home = TempHome::new();
-    let shelby_dir = home.0.join(".shelbymcp");
-    fs::create_dir_all(&shelby_dir).unwrap();
+    let legacy_dir = home.0.join(".shelbymcp");
+    fs::create_dir_all(&legacy_dir).unwrap();
     fs::write(
-        shelby_dir.join("projects.seed.json"),
+        legacy_dir.join("projects.seed.json"),
         r#"{"projects":[{"slug":"shelby","displayName":"Shelby","sourceAliases":[]}],"topicClusters":{"memory":"shelby"}}"#,
     )
     .unwrap();

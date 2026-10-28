@@ -1,6 +1,6 @@
 [package]
 name = "assistant-integrations"
-description = "Reusable ShelbyMCP client integration catalog and safe fallback installer"
+description = "Reusable Advisaur MCP client integration catalog and safe fallback installer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,9 +1,9 @@
 # Architecture
 
-ShelbyMCP is one Rust implementation shared by the standalone server and future Shelby App hosts.
+Advisaur MCP is one Rust implementation shared by the standalone server and any app that embeds it.
 
 ```text
-AI client or Shelby App
+AI client or app host
         │
         ├─ stdio MCP ───────────────┐
         ├─ Streamable HTTP / OAuth ─┤
@@ -49,7 +49,7 @@ Canonical project IDs are stable UUIDv5 values derived from normalized repositor
 
 Stdio is the default and reserves stdout for JSON-RPC. Streamable HTTP exposes `/mcp`, `/health`, and discovery endpoints. Local sessions are managed in-process by `rmcp`.
 
-When `SHELBY_API_KEY` is configured, every `/mcp` request requires a valid bearer token. The same secret enables OAuth authorization-server and protected-resource metadata, dynamic client registration, authorization code with S256 PKCE, and resource-bound HMAC-derived access and refresh tokens. Client registrations are stored in SQLite; authorization codes and rate-limit state are in memory. Tokens do not expire or rotate, so rotating `SHELBY_API_KEY` revokes them. When no secret is configured, OAuth endpoints return `503` and HTTP is unauthenticated.
+When `ADVISAUR_API_KEY` is configured, every `/mcp` request requires a valid bearer token. The same secret enables OAuth authorization-server and protected-resource metadata, dynamic client registration, authorization code with S256 PKCE, and resource-bound HMAC-derived access and refresh tokens. Client registrations are stored in SQLite; authorization codes and rate-limit state are in memory. Tokens do not expire or rotate, so rotating `ADVISAUR_API_KEY` revokes them. When no secret is configured, OAuth endpoints return `503` and HTTP is unauthenticated.
 
 ## Distribution
 
@@ -57,6 +57,6 @@ The root npm package is a dependency-free launcher. It maps the current OS/archi
 
 Client manifests live in `integrations/`. Assembly copies canonical skills and builds a target-labeled Claude Desktop MCPB from each explicit native binary. Release builds produce native archives, npm packages, client packages, Rust library crates, and SHA-256 checksums. Publication is disabled by default and requires the exact version tag plus approval through GitHub's `release` environment.
 
-## Shelby App reuse
+## Reuse in an app
 
 Desktop targets can host `assistant_mcp::http::router` on the app's chosen loopback port and share an `Arc<Mutex<Memory>>`. All app targets can call `assistant-memory` directly. The connections UI can use `assistant-integrations::CLIENTS` and its status/setup helpers. This preserves one memory engine and one installer catalog across the app and standalone product; iOS does not need a Node sidecar or subprocess.

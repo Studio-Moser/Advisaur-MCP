@@ -39,7 +39,7 @@ cargo run -p assistant-mcp -- --db :memory:
 cargo run -p assistant-mcp -- --transport http --host 127.0.0.1 --port 3100 --db :memory:
 ```
 
-Use a temporary database for manual testing. Never point tests at a user's `~/.shelbymcp/memory.db`.
+Use a temporary database for manual testing. Never point tests at a user's `~/.studiomoser-assistant-mcp/memory.db`.
 
 ## Repository structure
 
@@ -83,7 +83,7 @@ Use the target triple matching your machine when building a platform package. As
 
 ```bash
 node "scripts/Build Integration Packages.mjs" --all --binary target/debug/advisaur-mcp
-python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py integrations/codex/shelbymcp
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py integrations/codex/advisaur-mcp
 claude plugin validate integrations/claude-code
 ```
 

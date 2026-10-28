@@ -1,11 +1,16 @@
 # Changelog
 
-All notable changes to ShelbyMCP will be documented in this file.
+All notable changes to Advisaur MCP (called ShelbyMCP before ADR-0012) will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- **Renamed to Advisaur MCP** (ADR-0012). The npm package and binary are `advisaur-mcp` (platform packages `advisaur-mcp-<platform>`), the MCP Registry entry is `io.github.Studio-Moser/advisaur-mcp`, the config key clients get is `advisaur-mcp`, the skills are `advisaur-forage` and `advisaur-onboard`, and the Claude Code plugin is `advisaur`. `serverInfo` is `advisaur-mcp` ("Advisaur memory") and the status resource `advisaur-mcp://status`. The crates are `assistant-memory`, `assistant-integrations`, `assistant-mcp` and `assistant-memory-eval`.
+- **Coming from ShelbyMCP:** `~/.shelbymcp` moves to `~/.studiomoser-assistant-mcp` the first time the server runs with its default database. `SHELBY_DB_PATH`, `SHELBY_TRANSPORT` and `SHELBY_API_KEY` are now `ADVISAUR_*`; the old names are read, with a warning, for one release. `setup` replaces a client's `shelbymcp` entry, keeping a command you wrote yourself, and `uninstall` removes either. The last `shelbymcp` release runs `advisaur-mcp` and says so. The brief header is `## Advisaur memory context`.
 
 ### Added
 

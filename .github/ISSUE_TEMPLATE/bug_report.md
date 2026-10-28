@@ -8,7 +8,7 @@ labels: ["type:bug"]
 A clear description of what's wrong.
 
 **To reproduce**
-1. Configure ShelbyMCP with...
+1. Configure Advisaur MCP with...
 2. Call tool...
 3. See error...
 
@@ -18,7 +18,7 @@ What should have happened.
 **Environment**
 - OS: [e.g., macOS 15.4, Ubuntu 24.04]
 - Node version: [e.g., 20.11]
-- ShelbyMCP version: [e.g., v0.1.0]
+- Advisaur MCP version: [e.g., v0.1.0]
 - AI tool: [e.g., Claude Code, Cursor]
 
 **Logs**

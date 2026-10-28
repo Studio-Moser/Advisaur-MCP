@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn windows_resolution_preserves_the_cmd_shim_path() {
         let directory = std::env::temp_dir().join(format!(
-            "shelby-command-path-{}-{}",
+            "assistant-command-path-{}-{}",
             std::process::id(),
             NEXT_PATH.fetch_add(1, Ordering::Relaxed)
         ));

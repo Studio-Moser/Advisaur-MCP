@@ -45,7 +45,7 @@ fn row_to_project(r: &Row) -> rusqlite::Result<Project> {
 }
 
 /// Strip `.git`, scheme, and convert `git@host:org/repo` → `host/org/repo`
-/// (identical to Shelby-MacOS `ProjectDetector.normalizeGitRemoteURL`).
+/// (identical to Advisaur-MacOS `ProjectDetector.normalizeGitRemoteURL`).
 pub fn normalize_git_remote(url: &str) -> String {
     let mut s = url.trim().to_string();
     if let Some(stripped) = s.strip_suffix(".git") {

@@ -6,7 +6,7 @@ members = ["crates/assistant-integrations", "crates/assistant-memory", "crates/a
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/Studio-Moser/Shelby-MCP"
+repository = "https://github.com/Studio-Moser/Advisaur-MCP"
 
 [workspace.dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

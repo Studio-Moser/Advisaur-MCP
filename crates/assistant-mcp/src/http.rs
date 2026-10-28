@@ -243,8 +243,8 @@ mod tests {
     use tower::ServiceExt;
 
     const API_KEY: &str = "test-api-key";
-    const HOST: &str = "shelby.test";
-    const RESOURCE: &str = "http://shelby.test/mcp";
+    const HOST: &str = "memory.test";
+    const RESOURCE: &str = "http://memory.test/mcp";
     const REDIRECT_URI: &str = "https://client.example/callback";
     const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -318,7 +318,7 @@ mod tests {
 
     fn authorize_form(client_id: &str, api_key: &str) -> String {
         format!(
-            "response_type=code&client_id={client_id}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={CHALLENGE}&code_challenge_method=S256&resource=http%3A%2F%2Fshelby.test%2Fmcp&state=csrf-state&api_key={api_key}"
+            "response_type=code&client_id={client_id}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={CHALLENGE}&code_challenge_method=S256&resource=http%3A%2F%2Fmemory.test%2Fmcp&state=csrf-state&api_key={api_key}"
         )
     }
 
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(metadata["resource"], RESOURCE);
         assert_eq!(
             metadata["authorization_servers"],
-            json!(["http://shelby.test"])
+            json!(["http://memory.test"])
         );
 
         let response = app
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()[header::WWW_AUTHENTICATE],
-            "Bearer resource_metadata=\"http://shelby.test/.well-known/oauth-protected-resource/mcp\""
+            "Bearer resource_metadata=\"http://memory.test/.well-known/oauth-protected-resource/mcp\""
         );
 
         for path in [
@@ -410,15 +410,15 @@ mod tests {
         let (status, _, text) = body(response).await;
         assert_eq!(status, StatusCode::OK);
         let metadata: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(metadata["issuer"], "http://shelby.test");
+        assert_eq!(metadata["issuer"], "http://memory.test");
         assert_eq!(
             metadata["authorization_endpoint"],
-            "http://shelby.test/authorize"
+            "http://memory.test/authorize"
         );
-        assert_eq!(metadata["token_endpoint"], "http://shelby.test/token");
+        assert_eq!(metadata["token_endpoint"], "http://memory.test/token");
         assert_eq!(
             metadata["registration_endpoint"],
-            "http://shelby.test/register"
+            "http://memory.test/register"
         );
         assert_eq!(
             metadata["code_challenge_methods_supported"],
@@ -427,7 +427,7 @@ mod tests {
 
         let client_id = register_client(&app).await;
         let authorize = format!(
-            "/authorize?response_type=code&client_id={client_id}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={CHALLENGE}&code_challenge_method=S256&resource=http%3A%2F%2Fshelby.test%2Fmcp&state=csrf-state"
+            "/authorize?response_type=code&client_id={client_id}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={CHALLENGE}&code_challenge_method=S256&resource=http%3A%2F%2Fmemory.test%2Fmcp&state=csrf-state"
         );
         let response = app
             .clone()
@@ -437,7 +437,7 @@ mod tests {
         let (status, _, html) = body(response).await;
         assert_eq!(status, StatusCode::OK);
         assert!(html.contains("<form"));
-        assert!(html.contains("name=\"resource\" value=\"http://shelby.test/mcp\""));
+        assert!(html.contains("name=\"resource\" value=\"http://memory.test/mcp\""));
         assert!(html.contains("name=\"code_challenge_method\" value=\"S256\""));
 
         let unknown = authorize.replace(&client_id, "unknown-client");
@@ -470,9 +470,9 @@ mod tests {
             "/authorize?response_type=code&client_id={client_id}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={CHALLENGE}&state=csrf-state"
         );
         for suffix in [
-            "&resource=http%3A%2F%2Fshelby.test%2Fmcp",
+            "&resource=http%3A%2F%2Fmemory.test%2Fmcp",
             "&code_challenge_method=S256&resource=http%3A%2F%2Fevil.test%2Fmcp",
-            "&code_challenge_method=plain&resource=http%3A%2F%2Fshelby.test%2Fmcp",
+            "&code_challenge_method=plain&resource=http%3A%2F%2Fmemory.test%2Fmcp",
         ] {
             let response = app
                 .clone()
@@ -507,7 +507,7 @@ mod tests {
         let client_id = register_client(&app).await;
         let code = authorize_code(&app, &client_id).await;
         let token_form = format!(
-            "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier={VERIFIER}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fshelby.test%2Fmcp"
+            "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier={VERIFIER}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fmemory.test%2Fmcp"
         );
         let response = app
             .clone()
@@ -582,7 +582,7 @@ mod tests {
         let client_id = register_client(&app).await;
         let code = authorize_code(&app, &client_id).await;
         let bad_pkce = format!(
-            "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fshelby.test%2Fmcp"
+            "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fmemory.test%2Fmcp"
         );
         let response = app
             .clone()
@@ -604,7 +604,7 @@ mod tests {
                 "/token",
                 Some("application/x-www-form-urlencoded"),
                 format!(
-                    "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier={VERIFIER}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fshelby.test%2Fmcp"
+                    "grant_type=authorization_code&code={code}&client_id={client_id}&code_verifier={VERIFIER}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&resource=http%3A%2F%2Fmemory.test%2Fmcp"
                 ),
             ))
             .await
@@ -637,7 +637,7 @@ mod tests {
                 "/token",
                 Some("application/x-www-form-urlencoded"),
                 format!(
-                    "grant_type=refresh_token&refresh_token={refresh_token}&client_id={client_id}&resource=http%3A%2F%2Fshelby.test%2Fmcp"
+                    "grant_type=refresh_token&refresh_token={refresh_token}&client_id={client_id}&resource=http%3A%2F%2Fmemory.test%2Fmcp"
                 ),
             ))
             .await

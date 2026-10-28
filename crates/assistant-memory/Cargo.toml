@@ -1,6 +1,6 @@
 [package]
 name = "assistant-memory"
-description = "Knowledge-graph memory engine for AI tools (SQLite + FTS5 + typed edges), the core behind Shelby MCP"
+description = "Knowledge-graph memory engine for AI tools (SQLite + FTS5 + typed edges), the core behind Advisaur MCP"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

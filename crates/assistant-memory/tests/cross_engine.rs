@@ -31,7 +31,7 @@ fn reads_and_extends_a_typescript_created_database() {
         source.display()
     );
     let path = std::env::temp_dir().join(format!(
-        "shelby-typescript-v18-{}.sqlite",
+        "assistant-typescript-v18-{}.sqlite",
         uuid::Uuid::new_v4()
     ));
     std::fs::copy(&source, &path).expect("copy compatibility fixture");
