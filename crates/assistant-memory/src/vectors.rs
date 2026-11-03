@@ -75,7 +75,24 @@ pub fn search_by_embedding(
     threshold: Option<f32>,
     eligible: Option<&HashSet<String>>,
 ) -> Result<Vec<VectorSearchResult>> {
-    let limit = limit.unwrap_or(20).clamp(1, 100) as usize;
+    search_by_embedding_bounded(
+        conn,
+        query,
+        limit.unwrap_or(20).clamp(1, 100) as usize,
+        threshold,
+        eligible,
+    )
+}
+
+/// `search_by_embedding` with a limit the caller has already bounded; see
+/// `fts::search_thoughts_bounded`.
+pub(crate) fn search_by_embedding_bounded(
+    conn: &Connection,
+    query: &[f32],
+    limit: usize,
+    threshold: Option<f32>,
+    eligible: Option<&HashSet<String>>,
+) -> Result<Vec<VectorSearchResult>> {
     let threshold = threshold.unwrap_or(DEFAULT_THRESHOLD);
     let mut stmt = conn.prepare("SELECT id, summary, type, topics, created_at, embedding FROM thoughts WHERE embedding IS NOT NULL")?;
     let rows = stmt.query_map([], |r| {

@@ -55,6 +55,16 @@ pub struct SearchListResult {
 }
 
 pub fn search_thoughts(conn: &Connection, o: &SearchOptions) -> Result<SearchListResult> {
+    search_thoughts_bounded(conn, o, o.limit.unwrap_or(20).clamp(1, 100))
+}
+
+/// `search_thoughts` with a limit the caller has already bounded. Hybrid search uses it so
+/// the candidate-pool evaluator can measure per-source pools above the 100-row cap.
+pub(crate) fn search_thoughts_bounded(
+    conn: &Connection,
+    o: &SearchOptions,
+    limit: i64,
+) -> Result<SearchListResult> {
     let sanitized = sanitize_fts_query(&o.query);
     if sanitized.is_empty() {
         return Ok(SearchListResult {
@@ -64,7 +74,6 @@ pub fn search_thoughts(conn: &Connection, o: &SearchOptions) -> Result<SearchLis
             offset: 0,
         });
     }
-    let limit = o.limit.unwrap_or(20).clamp(1, 100);
     let offset = o.offset.unwrap_or(0);
     let mut wheres = vec!["thoughts_fts MATCH ?".to_string()];
     let mut vals = vec![Value::Text(sanitized)];
