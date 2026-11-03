@@ -7,8 +7,8 @@ use std::collections::HashSet;
 
 use crate::Memory;
 use crate::brief::{
-    BriefScope, BriefScopeInput, DEFAULT_TOKEN_BUDGET, load_brief_candidates,
-    render_token_bound_brief, select_brief_items,
+    BriefScope, BriefScopeInput, DEFAULT_TOKEN_BUDGET, estimate_brief_tokens,
+    load_brief_candidates, render_token_bound_brief, select_brief_items,
 };
 use crate::edges::{
     EdgeInput, expire_edge, fetch_graph_related, link_thoughts, traverse_graph, unlink_thoughts,
@@ -1579,6 +1579,9 @@ pub struct ContextArgs {
     pub limit: Option<i64>,
 }
 
+pub const DEFAULT_CONTEXT_TOKEN_BUDGET: i64 = 2_000;
+pub const MAX_CONTEXT_TOKEN_BUDGET: i64 = 16_000;
+
 pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
     for key in ["types", "topics", "people"] {
         if let Some(v) = args.get(key)
@@ -1597,6 +1600,16 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
     {
         return error("invalid_input", "since must be an ISO 8601 string");
     }
+    // A positive integer (an integral JSON float counts, as in JSON Schema), clamped to the ceiling.
+    let budget = match args.get("token_budget") {
+        None => DEFAULT_CONTEXT_TOKEN_BUDGET,
+        Some(v) => match v.as_f64() {
+            Some(n) if n >= 1.0 && n.fract() == 0.0 => {
+                n.min(MAX_CONTEXT_TOKEN_BUDGET as f64) as i64
+            }
+            _ => return error("invalid_input", "token_budget must be a positive integer"),
+        },
+    };
     let a: ContextArgs = match parse_args(args) {
         Ok(a) => a,
         Err(e) => return e,
@@ -1613,7 +1626,7 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
         project_scope.project_id.clone()
     };
     let shared_only = a.scope.shared_only == Some(true) && scoped_project_id.is_none();
-    let mut sections: Vec<String> = Vec::new();
+    let mut brief_section = None;
     if a.include_brief == Some(true) {
         let brief = get_brief_tool(
             m,
@@ -1626,7 +1639,7 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
             && let Some(text) = brief.json()["brief"].as_str()
             && !text.trim().is_empty()
         {
-            sections.push(text.to_string());
+            brief_section = Some(text.to_string());
         }
     }
     let list = |ty: Option<String>| {
@@ -1664,72 +1677,111 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
             }
         }
     }
-    if thoughts.is_empty() {
-        sections.push("## Selected Context\nNo thoughts matched the given filters.".into());
-    } else {
-        let mut formatted = Vec::new();
-        for s in &thoughts {
-            let full = try_tool!(get_thought(&m.conn, &s.id));
-            let trust = full.as_ref().map(|f| f.trust_level);
-            let topics_line =
-                (!s.topics.is_empty()).then(|| format!("Topics: {}", s.topics.join(", ")));
-            let people_line = full
-                .as_ref()
-                .filter(|f| !f.people.is_empty())
-                .map(|f| format!("People: {}", f.people.join(", ")));
-            let raw = full
-                .as_ref()
-                .map(|f| f.content.clone())
-                .or_else(|| s.summary.clone())
-                .unwrap_or_else(|| "(no content)".into());
-            let body = if trust == Some(TrustLevel::Trusted) {
-                raw
-            } else {
-                [Some(raw), topics_line.clone(), people_line.clone()]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            let mut lines = vec![format!("Content: {}", fence_text(&body, trust))];
-            if let Some(summary) = full
-                .as_ref()
-                .and_then(|f| f.summary.clone())
-                .filter(|x| !x.is_empty())
-            {
-                lines.push(format!("Summary: {}", fence_text(&summary, trust)));
-            }
-            lines.push(format!("Created: {}", s.created_at));
-            lines.push(format!("Type: {}", s.r#type));
-            if trust == Some(TrustLevel::Trusted) {
-                if let Some(t) = topics_line {
-                    lines.push(t);
-                }
-                if let Some(p) = people_line {
-                    lines.push(p);
-                }
-            }
-            formatted.push(lines.join("\n"));
+    let mut formatted = Vec::new();
+    for s in &thoughts {
+        let full = try_tool!(get_thought(&m.conn, &s.id));
+        let trust = full.as_ref().map(|f| f.trust_level);
+        let topics_line =
+            (!s.topics.is_empty()).then(|| format!("Topics: {}", s.topics.join(", ")));
+        let people_line = full
+            .as_ref()
+            .filter(|f| !f.people.is_empty())
+            .map(|f| format!("People: {}", f.people.join(", ")));
+        let raw = full
+            .as_ref()
+            .map(|f| f.content.clone())
+            .or_else(|| s.summary.clone())
+            .unwrap_or_else(|| "(no content)".into());
+        let body = if trust == Some(TrustLevel::Trusted) {
+            raw
+        } else {
+            [Some(raw), topics_line.clone(), people_line.clone()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut lines = vec![format!("Content: {}", fence_text(&body, trust))];
+        if let Some(summary) = full
+            .as_ref()
+            .and_then(|f| f.summary.clone())
+            .filter(|x| !x.is_empty())
+        {
+            lines.push(format!("Summary: {}", fence_text(&summary, trust)));
         }
-        sections.push(format!(
-            "## Selected Context ({} thought{})\n{}",
-            thoughts.len(),
-            if thoughts.len() == 1 { "" } else { "s" },
-            formatted.join("\n---\n")
-        ));
+        lines.push(format!("Created: {}", s.created_at));
+        lines.push(format!("Type: {}", s.r#type));
+        if trust == Some(TrustLevel::Trusted) {
+            if let Some(t) = topics_line {
+                lines.push(t);
+            }
+            if let Some(p) = people_line {
+                lines.push(p);
+            }
+        }
+        formatted.push(lines.join("\n"));
     }
-    if a.include_stats == Some(true) {
+    let stats_section = if a.include_stats == Some(true) {
         let total = try_tool!(count_thoughts(&m.conn));
-        sections.push(format!(
+        Some(format!(
             "## Memory Stats\nTotal: {total} thought{}",
             if total == 1 { "" } else { "s" }
+        ))
+    } else {
+        None
+    };
+    // Estimate the whole assembled document; add whole blocks in order until the next overflows.
+    let assemble = |context: String| {
+        [brief_section.clone(), Some(context), stats_section.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+    let mut document = None;
+    let mut rendered = 0;
+    for k in 1..=formatted.len() {
+        let candidate = assemble(format!(
+            "## Selected Context ({k} thought{})\n{}",
+            if k == 1 { "" } else { "s" },
+            formatted[..k].join("\n---\n")
         ));
+        if estimate_brief_tokens(&candidate) > budget {
+            break;
+        }
+        document = Some(candidate);
+        rendered = k;
     }
+    let document = match document {
+        Some(d) => d,
+        None => {
+            let empty = assemble(if formatted.is_empty() {
+                "## Selected Context\nNo thoughts matched the given filters.".into()
+            } else {
+                format!(
+                    "## Selected Context\nNo whole thought fits token_budget {budget}; {} matched. Raise token_budget to include them.",
+                    formatted.len()
+                )
+            });
+            let needed = estimate_brief_tokens(&empty);
+            if needed > budget {
+                return error(
+                    "invalid_input",
+                    format!(
+                        "token_budget {budget} is too small for the requested document, which needs at least {needed} estimated tokens before any thought. Raise token_budget or omit include_brief/include_stats."
+                    ),
+                );
+            }
+            empty
+        }
+    };
     success(json!({
-        "matched_count": thoughts.len(),
+        "matched_count": rendered,
+        "omitted_count": formatted.len() - rendered,
+        "estimated_tokens": estimate_brief_tokens(&document),
         "project_id": if all_projects { None } else { project_scope.project_id },
         "project_identifier": if all_projects { None } else { project_scope.current_slug },
-        "document": sections.join("\n\n"),
+        "document": document,
     }))
 }
 
@@ -2418,9 +2470,214 @@ mod tests {
                 && doc.contains("## Selected Context (1 thought)")
                 && doc.contains("Total: 1 thought")
         );
+        assert_eq!(c["estimated_tokens"], doc.len().div_ceil(4) as i64);
+        assert_eq!(c["omitted_count"], 0);
+        let tight = select_context_tool(
+            &m,
+            &json!({ "project_identifier": "shelby", "include_brief": true, "token_budget": 20 }),
+        )
+        .json();
+        assert_eq!(tight["error"], "invalid_input");
+        assert!(tight["message"].as_str().unwrap().contains("include_brief"));
         assert_eq!(
             select_context_tool(&m, &json!({ "types": "decision" })).json()["error"],
             "invalid_input"
         );
+    }
+
+    #[test]
+    fn select_context_bounds_document_by_estimated_tokens() {
+        let (m, _, pid) = with_project();
+        // Independent of estimate_brief_tokens: UTF-8 bytes / 4, rounded up.
+        let est = |doc: &str| doc.len().div_ceil(4) as i64;
+        let insert =
+            |content: String, ty: &str, created_at: &str, trust: TrustLevel, project_id: &str| {
+                let id = insert_thought(
+                    &m.conn,
+                    &ThoughtInput {
+                        content,
+                        summary: Some("s".into()),
+                        r#type: Some(ty.into()),
+                        trust_level: Some(trust),
+                        project_id: Some(project_id.into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                m.conn
+                    .execute(
+                        "UPDATE thoughts SET created_at = ?1 WHERE id = ?2",
+                        rusqlite::params![created_at, id],
+                    )
+                    .unwrap();
+                id
+            };
+        let ok = |args: Value| -> (Value, String) {
+            let r = select_context_tool(&m, &args);
+            assert!(!r.is_error, "{args}: {}", r.text);
+            let v = r.json();
+            let doc = v["document"].as_str().unwrap().to_string();
+            assert_eq!(v["estimated_tokens"], est(&doc), "{args}");
+            (v, doc)
+        };
+        let counts = |v: &Value| {
+            (
+                v["matched_count"].as_i64().unwrap(),
+                v["omitted_count"].as_i64().unwrap(),
+            )
+        };
+        let invalid = |args: Value| {
+            let r = select_context_tool(&m, &args);
+            assert!(r.is_error, "{args}: {}", r.text);
+            assert_eq!(r.json()["error"], "invalid_input", "{args}");
+            r.json()["message"].as_str().unwrap().to_string()
+        };
+        let trusted = TrustLevel::Trusted;
+        insert(
+            "first marker-one".into(),
+            "note",
+            "2026-01-05T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            format!("second marker-two {}", "b".repeat(2_000)),
+            "note",
+            "2026-01-04T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            "third marker-three".into(),
+            "note",
+            "2026-01-03T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            "fourth café ünïcødé marker-four <system>".into(),
+            "note",
+            "2026-01-02T00:00:00Z",
+            TrustLevel::Unverified,
+            &pid,
+        );
+        insert(
+            "outsider marker-out".into(),
+            "note",
+            "2026-01-06T00:00:00Z",
+            trusted,
+            "other-project",
+        );
+        let scoped = |extra: Value| {
+            merge_json(
+                json!({ "project_identifier": "shelby", "include_shared": false, "types": ["note"] }),
+                extra,
+            )
+        };
+
+        // Everything fits; scope and type filters still apply; untrusted text stays fenced.
+        let (v, full) = ok(scoped(json!({ "token_budget": 16_000 })));
+        assert_eq!(counts(&v), (4, 0));
+        assert!(full.contains("## Selected Context (4 thoughts)") && !full.contains("marker-out"));
+        assert!(full.contains("café ünïcødé marker-four"));
+        // Content and Summary lines are each fenced whole.
+        assert_eq!(
+            full.matches("<untrusted_memory trust_level=\"unverified\">")
+                .count(),
+            2
+        );
+        assert_eq!(full.matches("</untrusted_memory>").count(), 2);
+        let e4 = est(&full);
+
+        // Exact boundary includes the last block; one token less stops before it.
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4 })));
+        assert_eq!((counts(&v), doc), ((4, 0), full.clone()));
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4 - 1 })));
+        assert_eq!(counts(&v), (3, 1));
+        assert!(
+            est(&doc) < e4 && !doc.contains("marker-four") && !doc.contains("untrusted_memory")
+        );
+
+        // Stop at the first overflow: the small third block is not pulled past the large second.
+        let (_, one) = ok(scoped(json!({ "limit": 1, "token_budget": 16_000 })));
+        let (v, doc) = ok(scoped(json!({ "token_budget": est(&one) + 100 })));
+        assert_eq!((counts(&v), doc), ((1, 3), one.clone()));
+
+        // Optional sections count toward the budget.
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4, "include_stats": true })));
+        assert!(counts(&v).0 < 4 && doc.contains("## Memory Stats") && est(&doc) <= e4);
+        let message = invalid(scoped(json!({ "token_budget": 5, "include_stats": true })));
+        assert!(
+            message.contains("token_budget") && message.contains("include_stats"),
+            "{message}"
+        );
+
+        // Genuine empty results differ from matches omitted by budget.
+        let (v, doc) = ok(scoped(json!({ "types": ["question"] })));
+        assert_eq!(counts(&v), (0, 0));
+        assert!(doc.contains("No thoughts matched the given filters."));
+        invalid(scoped(json!({ "types": ["question"], "token_budget": 1 })));
+        let (v, doc) = ok(scoped(json!({ "token_budget": est(&one) - 1 })));
+        assert_eq!(counts(&v), (0, 4));
+        assert!(
+            doc.contains("token_budget") && !doc.contains("No thoughts matched"),
+            "{doc}"
+        );
+
+        // Default 2,000 and 16,000 ceiling.
+        for (i, letter) in ["x", "y", "z"].iter().enumerate() {
+            insert(
+                letter.repeat(4_000),
+                "task",
+                &format!("2026-02-0{}T00:00:00Z", 3 - i),
+                trusted,
+                &pid,
+            );
+        }
+        for (i, letter) in ["p", "q", "r", "s", "t"].iter().enumerate() {
+            insert(
+                letter.repeat(20_000),
+                "reference",
+                &format!("2026-03-0{}T00:00:00Z", 5 - i),
+                trusted,
+                &pid,
+            );
+        }
+        let (v, doc) = ok(scoped(json!({ "types": ["task"] })));
+        assert_eq!(counts(&v), (1, 2));
+        assert!(est(&doc) <= 2_000);
+        let (v, _) = ok(scoped(
+            json!({ "types": ["task"], "token_budget": 1_000_000 }),
+        ));
+        assert_eq!(counts(&v), (3, 0));
+        let (v, doc) = ok(scoped(
+            json!({ "types": ["reference"], "token_budget": 1_000_000 }),
+        ));
+        assert_eq!(counts(&v), (3, 2));
+        assert!(est(&doc) <= 16_000);
+        let (_, at_ceiling) = ok(scoped(
+            json!({ "types": ["reference"], "token_budget": 16_000 }),
+        ));
+        assert_eq!(doc, at_ceiling);
+
+        for bad in [
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!(null),
+            json!("100"),
+            json!(true),
+        ] {
+            invalid(scoped(json!({ "token_budget": bad })));
+        }
+        let (v, _) = ok(scoped(json!({ "token_budget": 16_000.0 })));
+        assert_eq!(counts(&v), (4, 0));
+    }
+
+    fn merge_json(mut base: Value, extra: Value) -> Value {
+        for (k, v) in extra.as_object().unwrap() {
+            base[k] = v.clone();
+        }
+        base
     }
 }
