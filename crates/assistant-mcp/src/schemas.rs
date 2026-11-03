@@ -133,6 +133,7 @@ pub fn tools() -> Vec<Tool> {
                 "topic": s("Filter by topic"),
                 "project": s("Filter by project"),
                 "graph_depth": n("Graph traversal depth after retrieval (0 = none, max 5). When >= 1, related thoughts reachable via graph edges are included in graph_related."),
+                "include_superseded": b("Also search superseded memories: consolidated ones and ones refuted as a whole by an active refuted_by edge (default false). Scope, type, topic, and project filters still apply."),
             }), scope_fields("search")), &[]),
         )
         .with_annotations(annotations(false, false, true)),
@@ -353,5 +354,19 @@ mod tests {
             &schema,
             &json!({ "thoughts": [{ "content": "Bulk" }] })
         ));
+    }
+
+    #[test]
+    fn search_schema_accepts_boolean_include_superseded() {
+        let validate = |args: Value| validate_tool_input("search_thoughts", &args);
+        assert!(validate(json!({ "query": "q", "include_superseded": true })).is_ok());
+        assert!(validate(json!({ "query": "q", "include_superseded": false })).is_ok());
+        assert!(validate(json!({ "query": "q", "include_superseded": "yes" })).is_err());
+        let tools = tools();
+        let search = tools.iter().find(|t| t.name == "search_thoughts").unwrap();
+        assert_eq!(
+            search.input_schema["properties"]["include_superseded"]["type"],
+            "boolean"
+        );
     }
 }

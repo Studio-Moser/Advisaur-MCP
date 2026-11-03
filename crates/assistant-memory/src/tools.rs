@@ -761,6 +761,7 @@ pub struct SearchArgs {
     pub project: Option<String>,
     pub graph_depth: Option<i64>,
     pub topic: Option<String>,
+    pub include_superseded: Option<bool>,
 }
 
 fn summary_json(
@@ -825,6 +826,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
     let offset = a.offset.unwrap_or(0);
     let graph_depth = a.graph_depth.unwrap_or(0).clamp(0, 5);
     let canonical_topic = a.topic.as_deref().map(canonicalize_topic);
+    // One request instant for every supersession check; history bypasses only this filter.
+    let exclude_superseded_at = (a.include_superseded != Some(true)).then(crate::now_iso);
     let telemetry_slug = if all_projects {
         None
     } else {
@@ -948,7 +951,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
             embedding,
             Some(pool),
             None,
-            eligible.as_ref()
+            eligible.as_ref(),
+            exclude_superseded_at.as_deref()
         ));
         let meta = try_tool!(load_meta(
             &candidates.iter().map(|c| c.id.clone()).collect::<Vec<_>>()
@@ -987,6 +991,7 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
                 include_shared,
                 shared_only,
                 topic: a.topic.clone(),
+                exclude_superseded_at: exclude_superseded_at.clone(),
             },
         )
     };
@@ -1019,7 +1024,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
         embedding,
         Some(pool),
         None,
-        eligible.as_ref()
+        eligible.as_ref(),
+        exclude_superseded_at.as_deref()
     ));
     let mut order: Vec<String> = Vec::new();
     let mut by_id: std::collections::HashMap<
@@ -2083,6 +2089,185 @@ mod tests {
             Some(vec![1.0, 0.0])
         );
         assert_eq!(vector_ids(&m), vec![meta_only]);
+    }
+
+    #[test]
+    fn search_excludes_superseded_unless_history_requested() {
+        use crate::vectors::store_embedding;
+        let (m, _, pid) = with_project();
+        let insert = |content: &str, ty: &str, project_id: &str| {
+            insert_thought(
+                &m.conn,
+                &ThoughtInput {
+                    content: content.into(),
+                    summary: Some(content.into()),
+                    r#type: Some(ty.into()),
+                    project_id: Some(project_id.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let refute = |source: &str,
+                      target: &str,
+                      metadata: Option<&str>,
+                      from: Option<&str>,
+                      until: Option<&str>| {
+            m.conn
+                .execute(
+                    "INSERT INTO edges (id, source_id, target_id, edge_type, metadata, created_at, valid_from, valid_until)
+                     VALUES (?1, ?2, ?3, 'refuted_by', ?4, 'x', ?5, ?6)",
+                    rusqlite::params![uuid::Uuid::new_v4().to_string(), source, target, metadata, from, until],
+                )
+                .unwrap();
+        };
+        // Current rows rank below every superseded row in both FTS and vector order.
+        let current_words = "kestrel current record with several diluting words";
+        let cur1 = insert(current_words, "note", &pid);
+        let cur2 = insert(&format!("{current_words} two"), "decision", &pid);
+        let claim_scoped = insert(&format!("{current_words} claim"), "note", &pid);
+        let expired = insert(&format!("{current_words} expired"), "note", &pid);
+        let future = insert(&format!("{current_words} future"), "note", &pid);
+        let consolidated = insert("kestrel kestrel kestrel kestrel a", "decision", &pid);
+        let whole = insert("kestrel kestrel kestrel kestrel b", "note", &pid);
+        let blank = insert("kestrel kestrel kestrel kestrel c", "note", &pid);
+        let non_string = insert("kestrel kestrel kestrel kestrel d", "note", &pid);
+        let malformed = insert("kestrel kestrel kestrel kestrel e", "note", &pid);
+        let leaf = insert("unrelated graph leaf", "note", &pid);
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                rusqlite::params![cur1, consolidated],
+            )
+            .unwrap();
+        refute(&whole, &cur1, None, None, None);
+        refute(&blank, &cur1, Some(r#"{"claim":"   "}"#), None, None);
+        refute(&non_string, &cur1, Some(r#"{"claim":5}"#), None, None);
+        refute(&malformed, &cur1, Some("{not json"), None, None);
+        refute(
+            &claim_scoped,
+            &cur1,
+            Some(r#"{"claim":"the old port"}"#),
+            None,
+            None,
+        );
+        refute(&expired, &cur1, None, None, Some("2020-01-01T00:00:00Z"));
+        refute(&future, &cur1, None, Some("2999-01-01T00:00:00Z"), None);
+        m.conn
+            .execute(
+                "INSERT INTO edges (id, source_id, target_id, edge_type, created_at) VALUES ('leaf', ?1, ?2, 'related', 'x')",
+                rusqlite::params![consolidated, leaf],
+            )
+            .unwrap();
+        let current: HashSet<String> = [&cur1, &cur2, &claim_scoped, &expired, &future]
+            .into_iter()
+            .cloned()
+            .collect();
+        let superseded: HashSet<String> = [&consolidated, &whole, &blank, &non_string, &malformed]
+            .into_iter()
+            .cloned()
+            .collect();
+        for id in current.iter().chain(&superseded) {
+            let v = if superseded.contains(id) {
+                [1.0, 0.0]
+            } else {
+                [0.9, 0.3]
+            };
+            store_embedding(&m.conn, id, &v).unwrap();
+        }
+        let ids = |r: &Value| -> HashSet<String> {
+            r["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let related = |r: &Value| -> HashSet<String> {
+            r["graph_related"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let last_telemetry = || -> (i64, HashSet<String>) {
+            let (count, top): (i64, String) = m
+                .conn
+                .query_row(
+                    "SELECT result_count, top_ids FROM search_telemetry ORDER BY rowid DESC LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            (count, serde_json::from_str(&top).unwrap())
+        };
+        let modes = [
+            ("fts", json!({ "query": "kestrel" })),
+            ("vector", json!({ "embedding": [1.0, 0.0] })),
+            (
+                "hybrid",
+                json!({ "query": "kestrel", "embedding": [1.0, 0.0] }),
+            ),
+        ];
+        for (mode, base) in &modes {
+            let mut args = base.clone();
+            args["all_projects"] = json!(true);
+            args["limit"] = json!(5);
+            args["graph_depth"] = json!(1);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert_eq!(r["mode"], *mode);
+            assert_eq!(ids(&r), current, "{mode}: current rows fill the slots");
+            assert_eq!(r["total_count"], 5, "{mode}");
+            assert_eq!(last_telemetry(), (5, ids(&r)), "{mode}");
+            assert!(
+                !related(&r).contains(&leaf),
+                "{mode}: superseded rows seed no graph"
+            );
+
+            args["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert_eq!(ids(&r), superseded, "{mode}: history ranks superseded rows");
+            let expected_total = if *mode == "vector" { 5 } else { 10 };
+            assert_eq!(r["total_count"], expected_total, "{mode}");
+            assert!(related(&r).contains(&leaf), "{mode}");
+
+            // History still honors scope and type filters.
+            let mut scoped = base.clone();
+            scoped["project_identifier"] = json!("shelby");
+            scoped["include_shared"] = json!(false);
+            scoped["type"] = json!("decision");
+            scoped["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &scoped).json();
+            assert_eq!(
+                ids(&r),
+                HashSet::from([cur2.clone(), consolidated.clone()]),
+                "{mode}"
+            );
+            scoped["include_superseded"] = json!(false);
+            let r = search_thoughts_tool(&m, &scoped).json();
+            assert_eq!(ids(&r), HashSet::from([cur2.clone()]), "{mode}");
+        }
+        let outsider = insert(
+            "kestrel kestrel kestrel kestrel outsider",
+            "note",
+            "other-project",
+        );
+        store_embedding(&m.conn, &outsider, &[1.0, 0.0]).unwrap();
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                rusqlite::params![cur1, outsider],
+            )
+            .unwrap();
+        for (mode, base) in &modes {
+            let mut args = base.clone();
+            args["project_identifier"] = json!("shelby");
+            args["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert!(!ids(&r).contains(&outsider), "{mode}: history keeps scope");
+            assert!(ids(&r).contains(&consolidated), "{mode}");
+        }
     }
 
     #[test]
