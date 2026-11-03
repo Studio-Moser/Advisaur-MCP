@@ -7,8 +7,8 @@ use std::collections::HashSet;
 
 use crate::Memory;
 use crate::brief::{
-    BriefScope, BriefScopeInput, DEFAULT_TOKEN_BUDGET, load_brief_candidates,
-    render_token_bound_brief, select_brief_items,
+    BriefScope, BriefScopeInput, DEFAULT_TOKEN_BUDGET, estimate_brief_tokens,
+    load_brief_candidates, render_token_bound_brief, select_brief_items,
 };
 use crate::edges::{
     EdgeInput, expire_edge, fetch_graph_related, link_thoughts, traverse_graph, unlink_thoughts,
@@ -761,6 +761,7 @@ pub struct SearchArgs {
     pub project: Option<String>,
     pub graph_depth: Option<i64>,
     pub topic: Option<String>,
+    pub include_superseded: Option<bool>,
 }
 
 fn summary_json(
@@ -825,6 +826,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
     let offset = a.offset.unwrap_or(0);
     let graph_depth = a.graph_depth.unwrap_or(0).clamp(0, 5);
     let canonical_topic = a.topic.as_deref().map(canonicalize_topic);
+    // One request instant for every supersession check; history bypasses only this filter.
+    let exclude_superseded_at = (a.include_superseded != Some(true)).then(crate::now_iso);
     let telemetry_slug = if all_projects {
         None
     } else {
@@ -948,7 +951,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
             embedding,
             Some(pool),
             None,
-            eligible.as_ref()
+            eligible.as_ref(),
+            exclude_superseded_at.as_deref()
         ));
         let meta = try_tool!(load_meta(
             &candidates.iter().map(|c| c.id.clone()).collect::<Vec<_>>()
@@ -987,6 +991,7 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
                 include_shared,
                 shared_only,
                 topic: a.topic.clone(),
+                exclude_superseded_at: exclude_superseded_at.clone(),
             },
         )
     };
@@ -1019,7 +1024,8 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
         embedding,
         Some(pool),
         None,
-        eligible.as_ref()
+        eligible.as_ref(),
+        exclude_superseded_at.as_deref()
     ));
     let mut order: Vec<String> = Vec::new();
     let mut by_id: std::collections::HashMap<
@@ -1573,6 +1579,9 @@ pub struct ContextArgs {
     pub limit: Option<i64>,
 }
 
+pub const DEFAULT_CONTEXT_TOKEN_BUDGET: i64 = 2_000;
+pub const MAX_CONTEXT_TOKEN_BUDGET: i64 = 16_000;
+
 pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
     for key in ["types", "topics", "people"] {
         if let Some(v) = args.get(key)
@@ -1591,6 +1600,16 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
     {
         return error("invalid_input", "since must be an ISO 8601 string");
     }
+    // A positive integer (an integral JSON float counts, as in JSON Schema), clamped to the ceiling.
+    let budget = match args.get("token_budget") {
+        None => DEFAULT_CONTEXT_TOKEN_BUDGET,
+        Some(v) => match v.as_f64() {
+            Some(n) if n >= 1.0 && n.fract() == 0.0 => {
+                n.min(MAX_CONTEXT_TOKEN_BUDGET as f64) as i64
+            }
+            _ => return error("invalid_input", "token_budget must be a positive integer"),
+        },
+    };
     let a: ContextArgs = match parse_args(args) {
         Ok(a) => a,
         Err(e) => return e,
@@ -1607,7 +1626,7 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
         project_scope.project_id.clone()
     };
     let shared_only = a.scope.shared_only == Some(true) && scoped_project_id.is_none();
-    let mut sections: Vec<String> = Vec::new();
+    let mut brief_section = None;
     if a.include_brief == Some(true) {
         let brief = get_brief_tool(
             m,
@@ -1620,7 +1639,7 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
             && let Some(text) = brief.json()["brief"].as_str()
             && !text.trim().is_empty()
         {
-            sections.push(text.to_string());
+            brief_section = Some(text.to_string());
         }
     }
     let list = |ty: Option<String>| {
@@ -1658,72 +1677,111 @@ pub fn select_context_tool(m: &Memory, args: &Value) -> ToolResult {
             }
         }
     }
-    if thoughts.is_empty() {
-        sections.push("## Selected Context\nNo thoughts matched the given filters.".into());
-    } else {
-        let mut formatted = Vec::new();
-        for s in &thoughts {
-            let full = try_tool!(get_thought(&m.conn, &s.id));
-            let trust = full.as_ref().map(|f| f.trust_level);
-            let topics_line =
-                (!s.topics.is_empty()).then(|| format!("Topics: {}", s.topics.join(", ")));
-            let people_line = full
-                .as_ref()
-                .filter(|f| !f.people.is_empty())
-                .map(|f| format!("People: {}", f.people.join(", ")));
-            let raw = full
-                .as_ref()
-                .map(|f| f.content.clone())
-                .or_else(|| s.summary.clone())
-                .unwrap_or_else(|| "(no content)".into());
-            let body = if trust == Some(TrustLevel::Trusted) {
-                raw
-            } else {
-                [Some(raw), topics_line.clone(), people_line.clone()]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            let mut lines = vec![format!("Content: {}", fence_text(&body, trust))];
-            if let Some(summary) = full
-                .as_ref()
-                .and_then(|f| f.summary.clone())
-                .filter(|x| !x.is_empty())
-            {
-                lines.push(format!("Summary: {}", fence_text(&summary, trust)));
-            }
-            lines.push(format!("Created: {}", s.created_at));
-            lines.push(format!("Type: {}", s.r#type));
-            if trust == Some(TrustLevel::Trusted) {
-                if let Some(t) = topics_line {
-                    lines.push(t);
-                }
-                if let Some(p) = people_line {
-                    lines.push(p);
-                }
-            }
-            formatted.push(lines.join("\n"));
+    let mut formatted = Vec::new();
+    for s in &thoughts {
+        let full = try_tool!(get_thought(&m.conn, &s.id));
+        let trust = full.as_ref().map(|f| f.trust_level);
+        let topics_line =
+            (!s.topics.is_empty()).then(|| format!("Topics: {}", s.topics.join(", ")));
+        let people_line = full
+            .as_ref()
+            .filter(|f| !f.people.is_empty())
+            .map(|f| format!("People: {}", f.people.join(", ")));
+        let raw = full
+            .as_ref()
+            .map(|f| f.content.clone())
+            .or_else(|| s.summary.clone())
+            .unwrap_or_else(|| "(no content)".into());
+        let body = if trust == Some(TrustLevel::Trusted) {
+            raw
+        } else {
+            [Some(raw), topics_line.clone(), people_line.clone()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut lines = vec![format!("Content: {}", fence_text(&body, trust))];
+        if let Some(summary) = full
+            .as_ref()
+            .and_then(|f| f.summary.clone())
+            .filter(|x| !x.is_empty())
+        {
+            lines.push(format!("Summary: {}", fence_text(&summary, trust)));
         }
-        sections.push(format!(
-            "## Selected Context ({} thought{})\n{}",
-            thoughts.len(),
-            if thoughts.len() == 1 { "" } else { "s" },
-            formatted.join("\n---\n")
-        ));
+        lines.push(format!("Created: {}", s.created_at));
+        lines.push(format!("Type: {}", s.r#type));
+        if trust == Some(TrustLevel::Trusted) {
+            if let Some(t) = topics_line {
+                lines.push(t);
+            }
+            if let Some(p) = people_line {
+                lines.push(p);
+            }
+        }
+        formatted.push(lines.join("\n"));
     }
-    if a.include_stats == Some(true) {
+    let stats_section = if a.include_stats == Some(true) {
         let total = try_tool!(count_thoughts(&m.conn));
-        sections.push(format!(
+        Some(format!(
             "## Memory Stats\nTotal: {total} thought{}",
             if total == 1 { "" } else { "s" }
+        ))
+    } else {
+        None
+    };
+    // Estimate the whole assembled document; add whole blocks in order until the next overflows.
+    let assemble = |context: String| {
+        [brief_section.clone(), Some(context), stats_section.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+    let mut document = None;
+    let mut rendered = 0;
+    for k in 1..=formatted.len() {
+        let candidate = assemble(format!(
+            "## Selected Context ({k} thought{})\n{}",
+            if k == 1 { "" } else { "s" },
+            formatted[..k].join("\n---\n")
         ));
+        if estimate_brief_tokens(&candidate) > budget {
+            break;
+        }
+        document = Some(candidate);
+        rendered = k;
     }
+    let document = match document {
+        Some(d) => d,
+        None => {
+            let empty = assemble(if formatted.is_empty() {
+                "## Selected Context\nNo thoughts matched the given filters.".into()
+            } else {
+                format!(
+                    "## Selected Context\nNo whole thought fits token_budget {budget}; {} matched. Raise token_budget to include them.",
+                    formatted.len()
+                )
+            });
+            let needed = estimate_brief_tokens(&empty);
+            if needed > budget {
+                return error(
+                    "invalid_input",
+                    format!(
+                        "token_budget {budget} is too small for the requested document, which needs at least {needed} estimated tokens before any thought. Raise token_budget or omit include_brief/include_stats."
+                    ),
+                );
+            }
+            empty
+        }
+    };
     success(json!({
-        "matched_count": thoughts.len(),
+        "matched_count": rendered,
+        "omitted_count": formatted.len() - rendered,
+        "estimated_tokens": estimate_brief_tokens(&document),
         "project_id": if all_projects { None } else { project_scope.project_id },
         "project_identifier": if all_projects { None } else { project_scope.current_slug },
-        "document": sections.join("\n\n"),
+        "document": document,
     }))
 }
 
@@ -1992,6 +2050,279 @@ mod tests {
     }
 
     #[test]
+    fn text_edits_invalidate_embeddings_across_update_paths() {
+        use crate::vectors::{get_embedding, store_embedding};
+        let (m, detected, _) = with_project();
+        let capture = |content: &str| {
+            capture_thought(
+                &m,
+                &json!({ "content": content, "summary": content }),
+                &detected,
+            )
+            .json()["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let vector_ids = |m: &Memory| -> Vec<String> {
+            search_thoughts_tool(m, &json!({ "embedding": [1.0, 0.0], "all_projects": true }))
+                .json()["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let content_only = capture("alpha content only");
+        let summary_only = capture("beta summary only");
+        let both = capture("gamma both fields");
+        let bulk_a = capture("delta bulk one");
+        let bulk_b = capture("epsilon bulk two");
+        let meta_only = capture("zeta metadata only");
+        let reconciled = capture("the release train leaves every tuesday at noon");
+        for id in [
+            &content_only,
+            &summary_only,
+            &both,
+            &bulk_a,
+            &bulk_b,
+            &meta_only,
+            &reconciled,
+        ] {
+            store_embedding(&m.conn, id, &[1.0, 0.0]).unwrap();
+        }
+        assert_eq!(vector_ids(&m).len(), 7);
+
+        for args in [
+            json!({ "id": content_only, "content": "alpha edited" }),
+            json!({ "id": summary_only, "summary": "beta edited" }),
+            json!({ "id": both, "content": "gamma edited", "summary": "gamma edited" }),
+            json!({ "ids": [bulk_a, bulk_b], "content": "bulk edited" }),
+            json!({ "id": meta_only, "topics": ["kept"], "metadata": { "k": 1 }, "type": "decision" }),
+        ] {
+            let r = update_thought_tool(&m, &args);
+            assert!(!r.is_error, "{}", r.text);
+        }
+        let r = capture_thought(
+            &m,
+            &json!({ "content": "the release train leaves every tuesday at noon", "summary": "replacement summary" }),
+            &detected,
+        )
+        .json();
+        assert_eq!(
+            (r["action"].as_str(), r["id"].as_str()),
+            (Some("merged"), Some(reconciled.as_str()))
+        );
+
+        for id in [
+            &content_only,
+            &summary_only,
+            &both,
+            &bulk_a,
+            &bulk_b,
+            &reconciled,
+        ] {
+            assert_eq!(get_embedding(&m.conn, id).unwrap(), None, "{id}");
+        }
+        assert_eq!(
+            get_thought(&m.conn, &both).unwrap().unwrap().content,
+            "gamma edited"
+        );
+        assert_eq!(
+            get_thought(&m.conn, &reconciled)
+                .unwrap()
+                .unwrap()
+                .summary
+                .as_deref(),
+            Some("replacement summary")
+        );
+        assert_eq!(
+            get_embedding(&m.conn, &meta_only).unwrap(),
+            Some(vec![1.0, 0.0])
+        );
+        assert_eq!(vector_ids(&m), vec![meta_only]);
+    }
+
+    #[test]
+    fn search_excludes_superseded_unless_history_requested() {
+        use crate::vectors::store_embedding;
+        let (m, _, pid) = with_project();
+        let insert = |content: &str, ty: &str, project_id: &str| {
+            insert_thought(
+                &m.conn,
+                &ThoughtInput {
+                    content: content.into(),
+                    summary: Some(content.into()),
+                    r#type: Some(ty.into()),
+                    project_id: Some(project_id.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let refute = |source: &str,
+                      target: &str,
+                      metadata: Option<&str>,
+                      from: Option<&str>,
+                      until: Option<&str>| {
+            m.conn
+                .execute(
+                    "INSERT INTO edges (id, source_id, target_id, edge_type, metadata, created_at, valid_from, valid_until)
+                     VALUES (?1, ?2, ?3, 'refuted_by', ?4, 'x', ?5, ?6)",
+                    rusqlite::params![uuid::Uuid::new_v4().to_string(), source, target, metadata, from, until],
+                )
+                .unwrap();
+        };
+        // Current rows rank below every superseded row in both FTS and vector order.
+        let current_words = "kestrel current record with several diluting words";
+        let cur1 = insert(current_words, "note", &pid);
+        let cur2 = insert(&format!("{current_words} two"), "decision", &pid);
+        let claim_scoped = insert(&format!("{current_words} claim"), "note", &pid);
+        let expired = insert(&format!("{current_words} expired"), "note", &pid);
+        let future = insert(&format!("{current_words} future"), "note", &pid);
+        let consolidated = insert("kestrel kestrel kestrel kestrel a", "decision", &pid);
+        let whole = insert("kestrel kestrel kestrel kestrel b", "note", &pid);
+        let blank = insert("kestrel kestrel kestrel kestrel c", "note", &pid);
+        let non_string = insert("kestrel kestrel kestrel kestrel d", "note", &pid);
+        let malformed = insert("kestrel kestrel kestrel kestrel e", "note", &pid);
+        let leaf = insert("unrelated graph leaf", "note", &pid);
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                rusqlite::params![cur1, consolidated],
+            )
+            .unwrap();
+        refute(&whole, &cur1, None, None, None);
+        refute(&blank, &cur1, Some(r#"{"claim":"   "}"#), None, None);
+        refute(&non_string, &cur1, Some(r#"{"claim":5}"#), None, None);
+        refute(&malformed, &cur1, Some("{not json"), None, None);
+        refute(
+            &claim_scoped,
+            &cur1,
+            Some(r#"{"claim":"the old port"}"#),
+            None,
+            None,
+        );
+        refute(&expired, &cur1, None, None, Some("2020-01-01T00:00:00Z"));
+        refute(&future, &cur1, None, Some("2999-01-01T00:00:00Z"), None);
+        m.conn
+            .execute(
+                "INSERT INTO edges (id, source_id, target_id, edge_type, created_at) VALUES ('leaf', ?1, ?2, 'related', 'x')",
+                rusqlite::params![consolidated, leaf],
+            )
+            .unwrap();
+        let current: HashSet<String> = [&cur1, &cur2, &claim_scoped, &expired, &future]
+            .into_iter()
+            .cloned()
+            .collect();
+        let superseded: HashSet<String> = [&consolidated, &whole, &blank, &non_string, &malformed]
+            .into_iter()
+            .cloned()
+            .collect();
+        for id in current.iter().chain(&superseded) {
+            let v = if superseded.contains(id) {
+                [1.0, 0.0]
+            } else {
+                [0.9, 0.3]
+            };
+            store_embedding(&m.conn, id, &v).unwrap();
+        }
+        let ids = |r: &Value| -> HashSet<String> {
+            r["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let related = |r: &Value| -> HashSet<String> {
+            r["graph_related"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let last_telemetry = || -> (i64, HashSet<String>) {
+            let (count, top): (i64, String) = m
+                .conn
+                .query_row(
+                    "SELECT result_count, top_ids FROM search_telemetry ORDER BY rowid DESC LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            (count, serde_json::from_str(&top).unwrap())
+        };
+        let modes = [
+            ("fts", json!({ "query": "kestrel" })),
+            ("vector", json!({ "embedding": [1.0, 0.0] })),
+            (
+                "hybrid",
+                json!({ "query": "kestrel", "embedding": [1.0, 0.0] }),
+            ),
+        ];
+        for (mode, base) in &modes {
+            let mut args = base.clone();
+            args["all_projects"] = json!(true);
+            args["limit"] = json!(5);
+            args["graph_depth"] = json!(1);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert_eq!(r["mode"], *mode);
+            assert_eq!(ids(&r), current, "{mode}: current rows fill the slots");
+            assert_eq!(r["total_count"], 5, "{mode}");
+            assert_eq!(last_telemetry(), (5, ids(&r)), "{mode}");
+            assert!(
+                !related(&r).contains(&leaf),
+                "{mode}: superseded rows seed no graph"
+            );
+
+            args["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert_eq!(ids(&r), superseded, "{mode}: history ranks superseded rows");
+            let expected_total = if *mode == "vector" { 5 } else { 10 };
+            assert_eq!(r["total_count"], expected_total, "{mode}");
+            assert!(related(&r).contains(&leaf), "{mode}");
+
+            // History still honors scope and type filters.
+            let mut scoped = base.clone();
+            scoped["project_identifier"] = json!("shelby");
+            scoped["include_shared"] = json!(false);
+            scoped["type"] = json!("decision");
+            scoped["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &scoped).json();
+            assert_eq!(
+                ids(&r),
+                HashSet::from([cur2.clone(), consolidated.clone()]),
+                "{mode}"
+            );
+            scoped["include_superseded"] = json!(false);
+            let r = search_thoughts_tool(&m, &scoped).json();
+            assert_eq!(ids(&r), HashSet::from([cur2.clone()]), "{mode}");
+        }
+        let outsider = insert(
+            "kestrel kestrel kestrel kestrel outsider",
+            "note",
+            "other-project",
+        );
+        store_embedding(&m.conn, &outsider, &[1.0, 0.0]).unwrap();
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                rusqlite::params![cur1, outsider],
+            )
+            .unwrap();
+        for (mode, base) in &modes {
+            let mut args = base.clone();
+            args["project_identifier"] = json!("shelby");
+            args["include_superseded"] = json!(true);
+            let r = search_thoughts_tool(&m, &args).json();
+            assert!(!ids(&r).contains(&outsider), "{mode}: history keeps scope");
+            assert!(ids(&r).contains(&consolidated), "{mode}");
+        }
+    }
+
+    #[test]
     fn crud_edge_graph_and_stats_tools() {
         let (m, detected, _) = with_project();
         let a = capture_thought(&m, &json!({ "content": "first thought here", "summary": "a", "trust_level": "unverified" }), &detected).json()["id"].as_str().unwrap().to_string();
@@ -2139,9 +2470,214 @@ mod tests {
                 && doc.contains("## Selected Context (1 thought)")
                 && doc.contains("Total: 1 thought")
         );
+        assert_eq!(c["estimated_tokens"], doc.len().div_ceil(4) as i64);
+        assert_eq!(c["omitted_count"], 0);
+        let tight = select_context_tool(
+            &m,
+            &json!({ "project_identifier": "shelby", "include_brief": true, "token_budget": 20 }),
+        )
+        .json();
+        assert_eq!(tight["error"], "invalid_input");
+        assert!(tight["message"].as_str().unwrap().contains("include_brief"));
         assert_eq!(
             select_context_tool(&m, &json!({ "types": "decision" })).json()["error"],
             "invalid_input"
         );
+    }
+
+    #[test]
+    fn select_context_bounds_document_by_estimated_tokens() {
+        let (m, _, pid) = with_project();
+        // Independent of estimate_brief_tokens: UTF-8 bytes / 4, rounded up.
+        let est = |doc: &str| doc.len().div_ceil(4) as i64;
+        let insert =
+            |content: String, ty: &str, created_at: &str, trust: TrustLevel, project_id: &str| {
+                let id = insert_thought(
+                    &m.conn,
+                    &ThoughtInput {
+                        content,
+                        summary: Some("s".into()),
+                        r#type: Some(ty.into()),
+                        trust_level: Some(trust),
+                        project_id: Some(project_id.into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                m.conn
+                    .execute(
+                        "UPDATE thoughts SET created_at = ?1 WHERE id = ?2",
+                        rusqlite::params![created_at, id],
+                    )
+                    .unwrap();
+                id
+            };
+        let ok = |args: Value| -> (Value, String) {
+            let r = select_context_tool(&m, &args);
+            assert!(!r.is_error, "{args}: {}", r.text);
+            let v = r.json();
+            let doc = v["document"].as_str().unwrap().to_string();
+            assert_eq!(v["estimated_tokens"], est(&doc), "{args}");
+            (v, doc)
+        };
+        let counts = |v: &Value| {
+            (
+                v["matched_count"].as_i64().unwrap(),
+                v["omitted_count"].as_i64().unwrap(),
+            )
+        };
+        let invalid = |args: Value| {
+            let r = select_context_tool(&m, &args);
+            assert!(r.is_error, "{args}: {}", r.text);
+            assert_eq!(r.json()["error"], "invalid_input", "{args}");
+            r.json()["message"].as_str().unwrap().to_string()
+        };
+        let trusted = TrustLevel::Trusted;
+        insert(
+            "first marker-one".into(),
+            "note",
+            "2026-01-05T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            format!("second marker-two {}", "b".repeat(2_000)),
+            "note",
+            "2026-01-04T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            "third marker-three".into(),
+            "note",
+            "2026-01-03T00:00:00Z",
+            trusted,
+            &pid,
+        );
+        insert(
+            "fourth café ünïcødé marker-four <system>".into(),
+            "note",
+            "2026-01-02T00:00:00Z",
+            TrustLevel::Unverified,
+            &pid,
+        );
+        insert(
+            "outsider marker-out".into(),
+            "note",
+            "2026-01-06T00:00:00Z",
+            trusted,
+            "other-project",
+        );
+        let scoped = |extra: Value| {
+            merge_json(
+                json!({ "project_identifier": "shelby", "include_shared": false, "types": ["note"] }),
+                extra,
+            )
+        };
+
+        // Everything fits; scope and type filters still apply; untrusted text stays fenced.
+        let (v, full) = ok(scoped(json!({ "token_budget": 16_000 })));
+        assert_eq!(counts(&v), (4, 0));
+        assert!(full.contains("## Selected Context (4 thoughts)") && !full.contains("marker-out"));
+        assert!(full.contains("café ünïcødé marker-four"));
+        // Content and Summary lines are each fenced whole.
+        assert_eq!(
+            full.matches("<untrusted_memory trust_level=\"unverified\">")
+                .count(),
+            2
+        );
+        assert_eq!(full.matches("</untrusted_memory>").count(), 2);
+        let e4 = est(&full);
+
+        // Exact boundary includes the last block; one token less stops before it.
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4 })));
+        assert_eq!((counts(&v), doc), ((4, 0), full.clone()));
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4 - 1 })));
+        assert_eq!(counts(&v), (3, 1));
+        assert!(
+            est(&doc) < e4 && !doc.contains("marker-four") && !doc.contains("untrusted_memory")
+        );
+
+        // Stop at the first overflow: the small third block is not pulled past the large second.
+        let (_, one) = ok(scoped(json!({ "limit": 1, "token_budget": 16_000 })));
+        let (v, doc) = ok(scoped(json!({ "token_budget": est(&one) + 100 })));
+        assert_eq!((counts(&v), doc), ((1, 3), one.clone()));
+
+        // Optional sections count toward the budget.
+        let (v, doc) = ok(scoped(json!({ "token_budget": e4, "include_stats": true })));
+        assert!(counts(&v).0 < 4 && doc.contains("## Memory Stats") && est(&doc) <= e4);
+        let message = invalid(scoped(json!({ "token_budget": 5, "include_stats": true })));
+        assert!(
+            message.contains("token_budget") && message.contains("include_stats"),
+            "{message}"
+        );
+
+        // Genuine empty results differ from matches omitted by budget.
+        let (v, doc) = ok(scoped(json!({ "types": ["question"] })));
+        assert_eq!(counts(&v), (0, 0));
+        assert!(doc.contains("No thoughts matched the given filters."));
+        invalid(scoped(json!({ "types": ["question"], "token_budget": 1 })));
+        let (v, doc) = ok(scoped(json!({ "token_budget": est(&one) - 1 })));
+        assert_eq!(counts(&v), (0, 4));
+        assert!(
+            doc.contains("token_budget") && !doc.contains("No thoughts matched"),
+            "{doc}"
+        );
+
+        // Default 2,000 and 16,000 ceiling.
+        for (i, letter) in ["x", "y", "z"].iter().enumerate() {
+            insert(
+                letter.repeat(4_000),
+                "task",
+                &format!("2026-02-0{}T00:00:00Z", 3 - i),
+                trusted,
+                &pid,
+            );
+        }
+        for (i, letter) in ["p", "q", "r", "s", "t"].iter().enumerate() {
+            insert(
+                letter.repeat(20_000),
+                "reference",
+                &format!("2026-03-0{}T00:00:00Z", 5 - i),
+                trusted,
+                &pid,
+            );
+        }
+        let (v, doc) = ok(scoped(json!({ "types": ["task"] })));
+        assert_eq!(counts(&v), (1, 2));
+        assert!(est(&doc) <= 2_000);
+        let (v, _) = ok(scoped(
+            json!({ "types": ["task"], "token_budget": 1_000_000 }),
+        ));
+        assert_eq!(counts(&v), (3, 0));
+        let (v, doc) = ok(scoped(
+            json!({ "types": ["reference"], "token_budget": 1_000_000 }),
+        ));
+        assert_eq!(counts(&v), (3, 2));
+        assert!(est(&doc) <= 16_000);
+        let (_, at_ceiling) = ok(scoped(
+            json!({ "types": ["reference"], "token_budget": 16_000 }),
+        ));
+        assert_eq!(doc, at_ceiling);
+
+        for bad in [
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!(null),
+            json!("100"),
+            json!(true),
+        ] {
+            invalid(scoped(json!({ "token_budget": bad })));
+        }
+        let (v, _) = ok(scoped(json!({ "token_budget": 16_000.0 })));
+        assert_eq!(counts(&v), (4, 0));
+    }
+
+    fn merge_json(mut base: Value, extra: Value) -> Value {
+        for (k, v) in extra.as_object().unwrap() {
+            base[k] = v.clone();
+        }
+        base
     }
 }

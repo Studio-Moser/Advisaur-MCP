@@ -862,12 +862,52 @@ mod tests {
                         .json();
                         assert_eq!(tool["error"], "temporary_failure");
                         assert!(!tool.to_string().contains("legacy secret"));
+                        // Search's supersession check reads whole-thought refutations only, so a
+                        // malformed one fails every mode closed; claim-scoped edges are never read.
+                        crate::vectors::store_embedding(&m.conn, &ids[0], &[1.0, 0.0]).unwrap();
+                        for args in [
+                            serde_json::json!({"query":"n0","all_projects":true}),
+                            serde_json::json!({"embedding":[1.0,0.0],"all_projects":true}),
+                            serde_json::json!({"query":"n0","embedding":[1.0,0.0],"all_projects":true}),
+                        ] {
+                            let search = crate::tools::search_thoughts_tool(&m, &args);
+                            assert_eq!(search.is_error, claim.is_none(), "{args}: {}", search.text);
+                            if search.is_error {
+                                let search = search.json();
+                                assert_eq!(search["error"], "temporary_failure", "{args}");
+                                assert!(!search.to_string().contains("legacy secret"), "{args}");
+                                let message = search["message"].as_str().unwrap();
+                                assert!(
+                                    message.contains(field) && message.contains("manage_edges"),
+                                    "{message}"
+                                );
+                            }
+                            let mut history = args.clone();
+                            history["include_superseded"] = serde_json::json!(true);
+                            let history = crate::tools::search_thoughts_tool(&m, &history);
+                            assert!(!history.is_error, "{args}: {}", history.text);
+                            assert_eq!(history.json()["results"][0]["id"], ids[0], "{args}");
+                        }
                         assert!(get_edge(&m.conn, &malformed_id).unwrap().is_some());
                         assert_eq!(
                             traverse_graph_at(&m.conn, &ids[0], 2, None, true, AT)
                                 .unwrap()
                                 .len(),
                             3
+                        );
+                        // The advised recovery works: unlinking the edge restores search.
+                        let unlinked = crate::tools::manage_edges_tool(
+                            &m,
+                            &serde_json::json!({"action":"unlink","source_id":ids[0],"target_id":ids[1],"edge_type":"refuted_by"}),
+                        )
+                        .json();
+                        assert_eq!(unlinked["action"], "unlinked");
+                        assert!(
+                            !crate::tools::search_thoughts_tool(
+                                &m,
+                                &serde_json::json!({"embedding":[1.0,0.0],"all_projects":true})
+                            )
+                            .is_error
                         );
                     }
                 }

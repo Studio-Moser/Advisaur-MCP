@@ -133,6 +133,7 @@ pub fn tools() -> Vec<Tool> {
                 "topic": s("Filter by topic"),
                 "project": s("Filter by project"),
                 "graph_depth": n("Graph traversal depth after retrieval (0 = none, max 5). When >= 1, related thoughts reachable via graph edges are included in graph_related."),
+                "include_superseded": b("Also search superseded memories: consolidated ones and ones refuted as a whole by an active refuted_by edge (default false). Scope, type, topic, and project filters still apply."),
             }), scope_fields("search")), &[]),
         )
         .with_annotations(annotations(false, false, true)),
@@ -252,6 +253,7 @@ pub fn tools() -> Vec<Tool> {
                 "include_brief": b("Prepend an essentials brief header (default: false)"),
                 "include_stats": b("Append a memory stats summary (default: false)"),
                 "limit": n("Max thoughts to return (default: 20, max: 100)"),
+                "token_budget": { "type": "integer", "minimum": 1, "description": "Estimated-token ceiling for the whole document, including the optional brief and stats (default: 2000, values above 16000 are clamped). Whole thoughts are kept in order until the next would exceed it; omitted_count reports the rest." },
             }), &[]),
         )
         .with_annotations(annotations(true, false, true)),
@@ -353,5 +355,42 @@ mod tests {
             &schema,
             &json!({ "thoughts": [{ "content": "Bulk" }] })
         ));
+    }
+
+    #[test]
+    fn search_schema_accepts_boolean_include_superseded() {
+        let validate = |args: Value| validate_tool_input("search_thoughts", &args);
+        assert!(validate(json!({ "query": "q", "include_superseded": true })).is_ok());
+        assert!(validate(json!({ "query": "q", "include_superseded": false })).is_ok());
+        assert!(validate(json!({ "query": "q", "include_superseded": "yes" })).is_err());
+        let tools = tools();
+        let search = tools.iter().find(|t| t.name == "search_thoughts").unwrap();
+        assert_eq!(
+            search.input_schema["properties"]["include_superseded"]["type"],
+            "boolean"
+        );
+    }
+
+    #[test]
+    fn context_schema_requires_a_positive_integer_token_budget() {
+        let validate = |budget: Value| {
+            validate_tool_input("select_context", &json!({ "token_budget": budget }))
+        };
+        for ok in [json!(1), json!(2_000), json!(16_000), json!(1_000_000)] {
+            assert!(validate(ok.clone()).is_ok(), "{ok}");
+        }
+        for bad in [
+            json!(0),
+            json!(-5),
+            json!(2.5),
+            json!(null),
+            json!("100"),
+            json!(true),
+        ] {
+            assert!(validate(bad.clone()).is_err(), "{bad}");
+        }
+        assert!(validate_tool_input("select_context", &json!({})).is_ok());
+        // JSON Schema counts an integral float as an integer; the handler matches.
+        assert!(validate(json!(2.0)).is_ok());
     }
 }
