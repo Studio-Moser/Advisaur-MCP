@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use thiserror::Error;
 
-use crate::candidate_pool::CandidatePoolReport;
+use crate::candidate_pool::{CLASSES, CandidatePoolReport};
 use crate::comparison::ComparisonReport;
 use crate::manifest::ResultManifest;
 
@@ -108,13 +108,13 @@ pub fn render_comparison_report(comparison: &ComparisonReport) -> String {
 }
 
 pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
-    let parity = &report.production_parity;
+    let parity = &report.override_parity;
     let mut out = format!(
         "# Hybrid Candidate-Pool Benchmark\n\n\
          Code: `{}`  \nFixture: `{}` ({}), SHA-256 `{}`  \n\
          Documents: {}; vectors: {} ({} dimensions)  \n\
          Metric version: `{}`; limits: {}; offsets: {}  \nPools per source: {}  \n\
-         Production parity (explicit default pool vs unmodified handler): {}/{} identical  \n\
+         Override path given the production pool vs default path: {}/{} identical  \n\
          Deterministic digest: `{}`  \nRun: {} on {}, {} ms\n",
         report.code_sha,
         report.fixture.source,
@@ -144,17 +144,17 @@ pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
         report.runtime.duration_ms,
     );
     for mismatch in &parity.mismatches {
-        let _ = writeln!(out, "- parity mismatch: {mismatch}");
+        let _ = writeln!(out, "- override/default mismatch: {mismatch}");
     }
 
-    for class in ["representative", "stress"] {
+    for class in CLASSES {
         let _ = write!(
             out,
             "\n## Mean first-page metrics: {class} cases\n\n\
              Deltas are against `current` at the same limit. Median time is per handler call.\n\n\
-             | Limit | Policy | Pool/source | Cases | Recall@5 | Recall@10 | NDCG@5 | NDCG@10 | \
+             | Limit | Policy | Pool/source | Cases | Mean fused total | Recall@5 | Recall@10 | NDCG@5 | NDCG@10 | \
              ΔRecall@5 | ΔRecall@10 | ΔNDCG@5 | ΔNDCG@10 | Median µs |\n\
-             | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+             | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
         );
         for aggregate in report.aggregates.iter().filter(|a| a.class == class) {
             let mut durations: Vec<u64> = report
@@ -179,11 +179,12 @@ pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
             let (m, d) = (&aggregate.mean, &aggregate.delta_vs_current);
             let _ = writeln!(
                 out,
-                "| {} | {} | {} | {} | {:.4} | {:.4} | {:.4} | {:.4} | {:+.4} | {:+.4} | {:+.4} | {:+.4} | {} |",
+                "| {} | {} | {} | {} | {:.1} | {:.4} | {:.4} | {:.4} | {:.4} | {:+.4} | {:+.4} | {:+.4} | {:+.4} | {} |",
                 aggregate.limit,
                 aggregate.policy,
                 aggregate.pool_per_source,
                 aggregate.cases,
+                aggregate.mean_fused_total,
                 m.recall_at_5,
                 m.recall_at_10,
                 m.ndcg_at_5,
@@ -199,17 +200,21 @@ pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
 
     out.push_str(
         "\n## First page per case\n\n\
-         Relevant ranks are positions on the first page; `-` means not returned.\n\n\
-         | Case | Class | Limit | Policy | Relevant ranks | Recall@10 | NDCG@10 | Fused total | Corpus |\n\
-         | --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: |\n",
+         Page ranks are positions on the first page; fused ranks are positions in the whole \
+         fused pool. `-` means not returned or not admitted.\n\n\
+         | Case | Class | Limit | Policy | Page ranks | Fused ranks | Recall@10 | NDCG@10 | Fused total | Corpus |\n\
+         | --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: |\n",
     );
     for o in report.observations.iter().filter(|o| o.offset == 0) {
-        let ranks = o
-            .relevant_ranks
-            .iter()
-            .map(|r| format!("{}:{}", r.id, r.rank.map_or("-".into(), |r| r.to_string())))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let format_ranks = |ranks: &[crate::manifest::RelevantRank]| {
+            ranks
+                .iter()
+                .map(|r| format!("{}:{}", r.id, r.rank.map_or("-".into(), |r| r.to_string())))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let ranks = format_ranks(&o.relevant_ranks);
+        let fused = format_ranks(&o.relevant_fused_ranks);
         let metrics = o.metrics.unwrap_or(crate::candidate_pool::PoolMetrics {
             recall_at_5: 0.0,
             recall_at_10: 0.0,
@@ -218,7 +223,7 @@ pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
         });
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {} | {ranks} | {:.4} | {:.4} | {} | {} |",
+            "| {} | {} | {} | {} | {ranks} | {fused} | {:.4} | {:.4} | {} | {} |",
             o.case_id,
             o.class,
             o.limit,

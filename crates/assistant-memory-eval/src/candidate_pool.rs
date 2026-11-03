@@ -22,6 +22,9 @@ pub const POOL_SCHEMA_VERSION: u32 = 1;
 pub const FIXTURE_SOURCE: &str = "repository:tests/fixtures/Candidate Pool Corpus-v1.json";
 pub const LIMITS: [usize; 2] = [5, 10];
 pub const FIXED_POOLS: [usize; 3] = [30, 100, 200];
+/// Case classes, reported separately: the small-project and large-corpus representative
+/// cases, and the synthetic stress controls.
+pub const CLASSES: [&str; 3] = ["representative-small", "representative-large", "stress"];
 const CURRENT: &str = "current";
 const COMPLETE: &str = "pool-all";
 
@@ -47,8 +50,10 @@ pub enum CandidatePoolError {
     UnknownProject { owner: String, project: String },
     #[error("case {case_id} labels unknown thought ID: {thought_id}")]
     UnknownRelevantThought { case_id: String, thought_id: String },
-    #[error("case {0} has an unknown class; expected representative or stress")]
+    #[error("case {0} has an unknown class")]
     UnknownClass(String),
+    #[error("case {0} must set exactly one of project_identifier and all_projects")]
+    AmbiguousScope(String),
     #[error("the corpus must hold more than {0} thoughts")]
     CorpusTooSmall(usize),
     #[error("case {case_id} returned a handler error: {text}")]
@@ -86,7 +91,9 @@ struct PoolCase {
     category: String,
     query: String,
     embedding: Vec<f32>,
-    project_identifier: String,
+    project_identifier: Option<String>,
+    #[serde(default)]
+    all_projects: bool,
     #[serde(rename = "type")]
     kind: Option<String>,
     relevant_ids: Vec<String>,
@@ -126,6 +133,9 @@ pub struct PoolObservation {
     /// Metrics and ranks describe the first page only, so they are absent on later pages.
     pub metrics: Option<PoolMetrics>,
     pub relevant_ranks: Vec<RelevantRank>,
+    /// Each relevant thought's rank in the whole fused pool this policy builds, read by
+    /// paging through it; `None` means the pool never admitted the thought.
+    pub relevant_fused_ranks: Vec<RelevantRank>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,12 +145,13 @@ pub struct PoolAggregate {
     pub policy: String,
     pub pool_per_source: usize,
     pub cases: usize,
+    pub mean_fused_total: f64,
     pub mean: PoolMetrics,
     pub delta_vs_current: PoolMetrics,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProductionParity {
+pub struct OverrideParity {
     pub checked: usize,
     pub identical: usize,
     pub mismatches: Vec<String>,
@@ -162,7 +173,7 @@ pub struct CandidatePoolReport {
     pub configuration: BTreeMap<String, String>,
     pub observations: Vec<PoolObservation>,
     pub aggregates: Vec<PoolAggregate>,
-    pub production_parity: ProductionParity,
+    pub override_parity: OverrideParity,
     pub runtime: PoolRuntime,
     pub deterministic_digest: String,
 }
@@ -174,7 +185,7 @@ struct DeterministicPoolResult<'a> {
     configuration: &'a BTreeMap<String, String>,
     observations: &'a [PoolObservation],
     aggregates: &'a [PoolAggregate],
-    production_parity: &'a ProductionParity,
+    override_parity: &'a OverrideParity,
 }
 
 impl CandidatePoolReport {
@@ -185,7 +196,7 @@ impl CandidatePoolReport {
             configuration: &self.configuration,
             observations: &self.observations,
             aggregates: &self.aggregates,
-            production_parity: &self.production_parity,
+            override_parity: &self.override_parity,
         })?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
@@ -219,7 +230,7 @@ pub fn run_candidate_pool_experiment(
 
     let mut observations = Vec::new();
     let mut observation_duration_us = BTreeMap::new();
-    let mut parity = ProductionParity {
+    let mut parity = OverrideParity {
         checked: 0,
         identical: 0,
         mismatches: Vec::new(),
@@ -229,6 +240,7 @@ pub fn run_candidate_pool_experiment(
         // telemetry, which no ranking reads, so every pool sees identical inputs.
         let memory = seeded_memory(&fixture)?;
         let relevant: BTreeSet<String> = case.relevant_ids.iter().cloned().collect();
+        let mut fused_rankings: BTreeMap<usize, Vec<String>> = BTreeMap::new();
         for limit in LIMITS {
             for offset in [0, limit, limit * 6] {
                 let args = case_arguments(case, limit, offset);
@@ -249,7 +261,8 @@ pub fn run_candidate_pool_experiment(
                     }
                     let output = result.json();
                     let page_ids = page_ids(&output);
-                    let (metrics, ranks) = if offset == 0 {
+                    let pool_per_source = pool.unwrap_or_else(|| production_pool(limit));
+                    let (metrics, ranks, fused_ranks) = if offset == 0 {
                         let at_5 = score_ranking(&page_ids, &relevant, 5)?;
                         let at_10 = score_ranking(&page_ids, &relevant, 10)?;
                         (
@@ -260,9 +273,13 @@ pub fn run_candidate_pool_experiment(
                                 ndcg_at_10: at_10.ndcg_at_k,
                             }),
                             relevant_ranks(&page_ids, &case.relevant_ids),
+                            relevant_ranks(
+                                fused_ranking(&memory, case, pool_per_source, &mut fused_rankings)?,
+                                &case.relevant_ids,
+                            ),
                         )
                     } else {
-                        (None, Vec::new())
+                        (None, Vec::new(), Vec::new())
                     };
                     let observation = PoolObservation {
                         case_id: case.id.clone(),
@@ -270,7 +287,7 @@ pub fn run_candidate_pool_experiment(
                         category: case.category.clone(),
                         limit,
                         policy: policy.clone(),
-                        pool_per_source: pool.unwrap_or_else(|| production_pool(limit)),
+                        pool_per_source,
                         offset,
                         page_ids,
                         total_count: output["total_count"].as_i64().unwrap_or(-1),
@@ -278,6 +295,7 @@ pub fn run_candidate_pool_experiment(
                         corpus_size,
                         metrics,
                         relevant_ranks: ranks,
+                        relevant_fused_ranks: fused_ranks,
                     };
                     observation_duration_us.insert(
                         CandidatePoolReport::runtime_key(&observation),
@@ -286,8 +304,9 @@ pub fn run_candidate_pool_experiment(
                     observations.push(observation);
                 }
 
-                // Passing the production pool explicitly must reproduce the unmodified
-                // handler byte for byte, so the override path adds nothing but the pool.
+                // The override path given the production pool must match the default path
+                // byte for byte. This checks the override plumbing only; both paths run this
+                // branch's handler, so it says nothing about parity with another revision.
                 let production = search_thoughts_tool(&memory, &args);
                 let explicit = search_thoughts_with_hybrid_pool(
                     &memory,
@@ -352,7 +371,7 @@ pub fn run_candidate_pool_experiment(
         configuration,
         observations,
         aggregates,
-        production_parity: parity,
+        override_parity: parity,
         runtime: PoolRuntime {
             generated_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -395,14 +414,18 @@ fn validate(fixture: &PoolFixture) -> Result<(), CandidatePoolError> {
         if !cases.insert(case.id.as_str()) {
             return Err(CandidatePoolError::DuplicateCase(case.id.clone()));
         }
-        if case.class != "representative" && case.class != "stress" {
+        if !CLASSES.contains(&case.class.as_str()) {
             return Err(CandidatePoolError::UnknownClass(case.id.clone()));
         }
-        if !projects.contains(case.project_identifier.as_str()) {
-            return Err(CandidatePoolError::UnknownProject {
-                owner: case.id.clone(),
-                project: case.project_identifier.clone(),
-            });
+        match (&case.project_identifier, case.all_projects) {
+            (Some(project), false) if !projects.contains(project.as_str()) => {
+                return Err(CandidatePoolError::UnknownProject {
+                    owner: case.id.clone(),
+                    project: project.clone(),
+                });
+            }
+            (Some(_), false) | (None, true) => {}
+            _ => return Err(CandidatePoolError::AmbiguousScope(case.id.clone())),
         }
         if case.embedding.len() != fixture.embedding_dimensions {
             return Err(CandidatePoolError::EmbeddingDimension(case.id.clone()));
@@ -458,14 +481,47 @@ fn case_arguments(case: &PoolCase, limit: usize, offset: usize) -> Value {
     let mut args = json!({
         "query": case.query,
         "embedding": case.embedding,
-        "project_identifier": case.project_identifier,
         "limit": limit,
         "offset": offset,
     });
+    match &case.project_identifier {
+        Some(project) => args["project_identifier"] = json!(project),
+        None => args["all_projects"] = json!(true),
+    }
     if let Some(kind) = &case.kind {
         args["type"] = json!(kind);
     }
     args
+}
+
+/// The whole fused pool for `pool` per source, in rank order, cached per pool. The pool is
+/// fixed, so paging it at the handler's maximum limit reads one ordering.
+fn fused_ranking<'a>(
+    memory: &Memory,
+    case: &PoolCase,
+    pool: usize,
+    cache: &'a mut BTreeMap<usize, Vec<String>>,
+) -> Result<&'a [String], CandidatePoolError> {
+    if let std::collections::btree_map::Entry::Vacant(entry) = cache.entry(pool) {
+        let mut ranking = Vec::new();
+        loop {
+            let args = case_arguments(case, 100, ranking.len());
+            let result = search_thoughts_with_hybrid_pool(memory, &args, Some(pool as i64));
+            if result.is_error {
+                return Err(CandidatePoolError::Handler {
+                    case_id: case.id.clone(),
+                    text: result.text,
+                });
+            }
+            let page = page_ids(&result.json());
+            if page.is_empty() {
+                break;
+            }
+            ranking.extend(page);
+        }
+        entry.insert(ranking);
+    }
+    Ok(&cache[&pool])
 }
 
 fn page_ids(output: &Value) -> Vec<String> {
@@ -493,7 +549,7 @@ fn aggregate(
     policies: &[(String, Option<usize>)],
 ) -> Vec<PoolAggregate> {
     let mut aggregates = Vec::new();
-    for class in ["representative", "stress"] {
+    for class in CLASSES {
         for limit in LIMITS {
             let mean_for = |policy: &str| {
                 let first_pages: Vec<&PoolObservation> = observations
@@ -512,6 +568,11 @@ fn aggregate(
                 (
                     first_pages.len(),
                     first_pages.first().map_or(0, |o| o.pool_per_source),
+                    first_pages
+                        .iter()
+                        .map(|o| o.total_count as f64)
+                        .sum::<f64>()
+                        / count,
                     PoolMetrics {
                         recall_at_5: sum(|m| m.recall_at_5),
                         recall_at_10: sum(|m| m.recall_at_10),
@@ -520,9 +581,9 @@ fn aggregate(
                     },
                 )
             };
-            let (_, _, current) = mean_for(CURRENT);
+            let (_, _, _, current) = mean_for(CURRENT);
             for (policy, _) in policies {
-                let (cases, pool_per_source, mean) = mean_for(policy);
+                let (cases, pool_per_source, mean_fused_total, mean) = mean_for(policy);
                 if cases == 0 {
                     continue;
                 }
@@ -532,6 +593,7 @@ fn aggregate(
                     policy: policy.clone(),
                     pool_per_source,
                     cases,
+                    mean_fused_total,
                     mean,
                     delta_vs_current: PoolMetrics {
                         recall_at_5: mean.recall_at_5 - current.recall_at_5,

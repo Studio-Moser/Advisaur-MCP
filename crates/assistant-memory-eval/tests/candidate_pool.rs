@@ -28,8 +28,8 @@ fn observation<'a>(
 }
 
 #[test]
-fn candidate_pool_default_policy_reproduces_the_production_handler() {
-    let parity = &REPORT.production_parity;
+fn candidate_pool_override_path_matches_the_default_path() {
+    let parity = &REPORT.override_parity;
     assert!(parity.checked > 0);
     assert_eq!(parity.identical, parity.checked, "{:?}", parity.mismatches);
     for limit in LIMITS {
@@ -70,7 +70,10 @@ fn candidate_pool_report_covers_every_pool_limit_case_and_offset() {
             .all(|o| o.total_count as usize <= o.corpus_size)
     );
     let classes: BTreeSet<&str> = REPORT.aggregates.iter().map(|a| a.class.as_str()).collect();
-    assert_eq!(classes, BTreeSet::from(["representative", "stress"]));
+    assert_eq!(
+        classes,
+        BTreeSet::from(["representative-large", "representative-small", "stress"])
+    );
     for key in [
         "metric_version",
         "limits",
@@ -105,23 +108,60 @@ fn candidate_pool_tail_controls_detect_truncation() {
     let recovered = observation("stress-tail-060", 10, "pool-100", 0);
     assert_eq!(recovered.metrics.unwrap().recall_at_10, 1.0);
 
-    // Pools above the production 100 cap reach the deepest target, which grows the
-    // fused total even though the target stays below the first page.
+    // Only pools above the production 100 cap admit the deepest target; fusion still
+    // ranks it below the first page.
     let capped = observation("stress-tail-150", 10, "pool-100", 0);
+    assert_eq!(capped.relevant_fused_ranks[0].rank, None);
     let deep = observation("stress-tail-150", 10, "pool-200", 0);
-    assert!(deep.total_count > capped.total_count);
+    let rank = deep.relevant_fused_ranks[0]
+        .rank
+        .expect("admitted at pool-200");
+    assert!(rank > 10, "fused rank {rank}");
+}
+
+#[test]
+fn candidate_pool_first_page_ranks_agree_with_the_whole_fused_pool() {
+    for o in REPORT.observations.iter().filter(|o| o.offset == 0) {
+        for (page, fused) in o.relevant_ranks.iter().zip(&o.relevant_fused_ranks) {
+            assert_eq!(page.id, fused.id);
+            match page.rank {
+                Some(rank) => assert_eq!(fused.rank, Some(rank), "{}/{}", o.case_id, o.policy),
+                None => assert!(
+                    fused.rank.is_none_or(|rank| rank > o.limit),
+                    "{}/{}",
+                    o.case_id,
+                    o.policy
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn candidate_pool_large_representative_cases_exceed_the_production_pool() {
+    let large: Vec<&PoolObservation> = REPORT
+        .observations
+        .iter()
+        .filter(|o| o.class == "representative-large" && o.policy == "pool-all" && o.offset == 0)
+        .collect();
+    assert!(!large.is_empty());
+    assert!(large.iter().all(|o| o.total_count > 30), "{large:#?}");
+    assert!(large.iter().any(|o| o.total_count > 100));
 }
 
 #[test]
 fn candidate_pool_report_renders_classes_separately_with_deltas_and_pagination() {
     let markdown = render_candidate_pool_report(&REPORT);
-    let representative = markdown
-        .find("## Mean first-page metrics: representative cases")
-        .expect("representative section");
-    let stress = markdown
-        .find("## Mean first-page metrics: stress cases")
-        .expect("stress section");
-    assert!(representative < stress);
+    let headings: Vec<usize> = ["representative-small", "representative-large", "stress"]
+        .iter()
+        .map(|class| {
+            markdown
+                .find(&format!("## Mean first-page metrics: {class} cases"))
+                .unwrap_or_else(|| panic!("{class} section"))
+        })
+        .collect();
+    assert!(headings.is_sorted());
+    assert!(markdown.contains("Override path given the production pool vs default path"));
     assert!(markdown.contains("ΔRecall@5"));
     assert!(markdown.contains(&REPORT.fixture.sha256));
     assert!(markdown.contains("## Pagination"));

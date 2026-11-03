@@ -227,7 +227,7 @@ fn pool_benchmark_command(args: &[String]) -> Result<bool, Box<dyn Error>> {
         render_candidate_pool_report(&report),
     )?;
     println!("wrote candidate-pool artifacts: {}", output_path.display());
-    Ok(report.production_parity.identical == report.production_parity.checked)
+    Ok(report.override_parity.identical == report.override_parity.checked)
 }
 
 fn code_sha(options: &BTreeMap<String, String>) -> String {
