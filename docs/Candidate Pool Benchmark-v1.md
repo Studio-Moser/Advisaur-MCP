@@ -1,6 +1,10 @@
 # Hybrid candidate-pool benchmark (Advisaur-Docs#548)
 
-Recorded result of `assistant-memory-eval pool-benchmark` at code `b3836ab`. The generated report follows the findings unchanged. `Candidate Pool Benchmark-v1.json` beside it holds every observation: the page IDs for every pool, limit, case and offset, plus each relevant thought's rank in the whole fused pool. Runtimes come from one release build on one Mac and are indicative only. Reproduce with:
+Recorded result of `assistant-memory-eval pool-benchmark` at code `b3836ab`. The generated report follows the findings unchanged. `Candidate Pool Benchmark-v1.json` beside it holds every observation: the page IDs for every pool, limit, case and offset, plus each relevant thought's rank in the whole fused pool. Runtimes come from one release build on one Mac and are indicative only.
+
+After merging #82 (current-only search, `f77c2c8`), the run at merge commit `852df24` reproduced every observation, aggregate and parity count, and the deterministic digest `a47ccb37…`. The fixture has no superseded thoughts, so #82's filter excludes nothing. Only runtimes differ, so the recorded results stand.
+
+Reproduce with:
 
 ```bash
 node "scripts/Generate Candidate Pool Corpus.mjs"   # rewrites the fixture; output is byte-identical
