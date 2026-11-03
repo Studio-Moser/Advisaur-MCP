@@ -1992,6 +1992,100 @@ mod tests {
     }
 
     #[test]
+    fn text_edits_invalidate_embeddings_across_update_paths() {
+        use crate::vectors::{get_embedding, store_embedding};
+        let (m, detected, _) = with_project();
+        let capture = |content: &str| {
+            capture_thought(
+                &m,
+                &json!({ "content": content, "summary": content }),
+                &detected,
+            )
+            .json()["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let vector_ids = |m: &Memory| -> Vec<String> {
+            search_thoughts_tool(m, &json!({ "embedding": [1.0, 0.0], "all_projects": true }))
+                .json()["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let content_only = capture("alpha content only");
+        let summary_only = capture("beta summary only");
+        let both = capture("gamma both fields");
+        let bulk_a = capture("delta bulk one");
+        let bulk_b = capture("epsilon bulk two");
+        let meta_only = capture("zeta metadata only");
+        let reconciled = capture("the release train leaves every tuesday at noon");
+        for id in [
+            &content_only,
+            &summary_only,
+            &both,
+            &bulk_a,
+            &bulk_b,
+            &meta_only,
+            &reconciled,
+        ] {
+            store_embedding(&m.conn, id, &[1.0, 0.0]).unwrap();
+        }
+        assert_eq!(vector_ids(&m).len(), 7);
+
+        for args in [
+            json!({ "id": content_only, "content": "alpha edited" }),
+            json!({ "id": summary_only, "summary": "beta edited" }),
+            json!({ "id": both, "content": "gamma edited", "summary": "gamma edited" }),
+            json!({ "ids": [bulk_a, bulk_b], "content": "bulk edited" }),
+            json!({ "id": meta_only, "topics": ["kept"], "metadata": { "k": 1 }, "type": "decision" }),
+        ] {
+            let r = update_thought_tool(&m, &args);
+            assert!(!r.is_error, "{}", r.text);
+        }
+        let r = capture_thought(
+            &m,
+            &json!({ "content": "the release train leaves every tuesday at noon", "summary": "replacement summary" }),
+            &detected,
+        )
+        .json();
+        assert_eq!(
+            (r["action"].as_str(), r["id"].as_str()),
+            (Some("merged"), Some(reconciled.as_str()))
+        );
+
+        for id in [
+            &content_only,
+            &summary_only,
+            &both,
+            &bulk_a,
+            &bulk_b,
+            &reconciled,
+        ] {
+            assert_eq!(get_embedding(&m.conn, id).unwrap(), None, "{id}");
+        }
+        assert_eq!(
+            get_thought(&m.conn, &both).unwrap().unwrap().content,
+            "gamma edited"
+        );
+        assert_eq!(
+            get_thought(&m.conn, &reconciled)
+                .unwrap()
+                .unwrap()
+                .summary
+                .as_deref(),
+            Some("replacement summary")
+        );
+        assert_eq!(
+            get_embedding(&m.conn, &meta_only).unwrap(),
+            Some(vec![1.0, 0.0])
+        );
+        assert_eq!(vector_ids(&m), vec![meta_only]);
+    }
+
+    #[test]
     fn crud_edge_graph_and_stats_tools() {
         let (m, detected, _) = with_project();
         let a = capture_thought(&m, &json!({ "content": "first thought here", "summary": "a", "trust_level": "unverified" }), &detected).json()["id"].as_str().unwrap().to_string();
