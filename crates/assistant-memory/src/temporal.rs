@@ -78,20 +78,29 @@ pub(crate) fn ensure_sql_function(conn: &Connection) -> Result<()> {
         3,
         required | FunctionFlags::SQLITE_UTF8,
         |ctx| {
+            // A stored bound is not caller input: say which field and how to clear the edge.
+            let stored = |field: &str| {
+                rusqlite::Error::UserFunctionError(Box::new(Error::InvalidInput(format!(
+                    "A stored edge has an invalid {field}; unlink that edge with manage_edges (action \"unlink\") and relink it with a calendar-valid RFC3339 bound"
+                ))))
+            };
             // Borrow SQLite text and reject oversized values before copying or parsing them.
-            let text = |index, field| -> rusqlite::Result<Option<&str>> {
+            let text = |index, field: &str| -> rusqlite::Result<Option<&str>> {
                 match ctx.get_raw(index) {
                     rusqlite::types::ValueRef::Null => Ok(None),
                     rusqlite::types::ValueRef::Text(bytes) if bytes.len() <= 64 => {
-                        std::str::from_utf8(bytes).map(Some).map_err(|_| {
-                            rusqlite::Error::UserFunctionError(Box::new(invalid(field)))
-                        })
+                        std::str::from_utf8(bytes).map(Some).map_err(|_| stored(field))
                     }
-                    _ => Err(rusqlite::Error::UserFunctionError(Box::new(invalid(field)))),
+                    _ => Err(stored(field)),
                 }
             };
             let start = text(0, "valid_from")?;
             let end = text(1, "valid_until")?;
+            for (value, field) in [(start, "valid_from"), (end, "valid_until")] {
+                if value.is_some_and(|v| parse_bound(v).is_err()) {
+                    return Err(stored(field));
+                }
+            }
             let now = text(2, "current instant")?.ok_or_else(|| {
                 rusqlite::Error::UserFunctionError(Box::new(invalid("current instant")))
             })?;

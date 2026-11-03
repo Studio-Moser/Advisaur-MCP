@@ -150,6 +150,24 @@ const LEGACY_SAFE: &str = "t.type IN ('decision', 'reference', 'insight', 'prefe
     AND (json_type(t.metadata, '$.extra.sensitivity') IS NULL OR (json_type(t.metadata, '$.extra.sensitivity') = 'text'
       AND json_extract(t.metadata, '$.extra.sensitivity') = 'normal'))))";
 
+/// `t` has an active `refuted_by` edge that refutes it as a whole (no claim scope). Binds `@edge_now`.
+fn actively_refuted_sql() -> String {
+    format!(
+        "COALESCE((SELECT SUM(CASE WHEN {} THEN 1 ELSE 0 END) FROM edges e
+             WHERE e.source_id = t.id AND e.edge_type = 'refuted_by' AND {SCOPED_CLAIM} IS NULL), 0) > 0",
+        crate::temporal::ACTIVE_SQL
+    )
+}
+
+/// `t` is superseded as a whole, as the brief omits it: consolidated or actively refuted.
+/// Binds `@edge_now`; callers must register the temporal SQL function first.
+pub(crate) fn superseded_sql() -> String {
+    format!(
+        "(t.consolidated_into IS NOT NULL OR {})",
+        actively_refuted_sql()
+    )
+}
+
 fn scope_priority(scope: &BriefScopeInput) -> String {
     if scope.all_projects {
         format!("(visibility != 'shared' OR ({ELIGIBLE_SHARED}))")
@@ -172,13 +190,13 @@ pub fn load_brief_candidates(
     crate::temporal::ensure_sql_function(conn)?;
     let active = crate::temporal::ACTIVE_SQL;
     let requested = scope_priority(scope);
+    let actively_refuted = actively_refuted_sql();
     let sql = format!(
         "SELECT t.id, t.project_id,
            COALESCE((SELECT current_slug FROM projects WHERE projects.project_id = t.project_id), t.project_identifier) AS project_identifier,
            t.visibility, t.trust_level, t.type, t.summary, t.source, t.reinforcement_count, t.last_confirmed_at, t.consolidated_into,
            t.metadata, t.created_at, t.updated_at,
-           COALESCE((SELECT SUM(CASE WHEN {active} THEN 1 ELSE 0 END) FROM edges e
-             WHERE e.source_id = t.id AND e.edge_type = 'refuted_by' AND {SCOPED_CLAIM} IS NULL), 0) > 0 AS actively_refuted,
+           {actively_refuted} AS actively_refuted,
            (SELECT json_group_array({SCOPED_CLAIM}) FROM edges e WHERE e.source_id = t.id AND e.edge_type = 'refuted_by' AND {SCOPED_CLAIM} IS NOT NULL
              AND {active}) AS refuted_claims
          FROM thoughts t

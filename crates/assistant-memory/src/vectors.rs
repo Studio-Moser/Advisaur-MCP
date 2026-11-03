@@ -74,6 +74,7 @@ pub fn search_by_embedding(
     limit: Option<i64>,
     threshold: Option<f32>,
     eligible: Option<&HashSet<String>>,
+    exclude_superseded_at: Option<&str>,
 ) -> Result<Vec<VectorSearchResult>> {
     search_by_embedding_bounded(
         conn,
@@ -81,6 +82,7 @@ pub fn search_by_embedding(
         limit.unwrap_or(20).clamp(1, 100) as usize,
         threshold,
         eligible,
+        exclude_superseded_at,
     )
 }
 
@@ -92,10 +94,18 @@ pub(crate) fn search_by_embedding_bounded(
     limit: usize,
     threshold: Option<f32>,
     eligible: Option<&HashSet<String>>,
+    exclude_superseded_at: Option<&str>,
 ) -> Result<Vec<VectorSearchResult>> {
     let threshold = threshold.unwrap_or(DEFAULT_THRESHOLD);
-    let mut stmt = conn.prepare("SELECT id, summary, type, topics, created_at, embedding FROM thoughts WHERE embedding IS NOT NULL")?;
-    let rows = stmt.query_map([], |r| {
+    let mut sql = "SELECT t.id, t.summary, t.type, t.topics, t.created_at, t.embedding FROM thoughts t WHERE t.embedding IS NOT NULL".to_string();
+    let mut params: Vec<(&str, &dyn rusqlite::ToSql)> = Vec::new();
+    if let Some(now) = &exclude_superseded_at {
+        crate::temporal::ensure_sql_function(conn)?;
+        sql.push_str(&format!(" AND NOT {}", crate::brief::superseded_sql()));
+        params.push(("@edge_now", now));
+    }
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params.as_slice(), |r| {
         let topics: Option<String> = r.get(3)?;
         let blob: Vec<u8> = r.get(5)?;
         Ok((
@@ -175,15 +185,56 @@ mod tests {
             get_embedding(&m.conn, &ids[1]).unwrap(),
             Some(vec![0.8, 0.6])
         );
-        let r = search_by_embedding(&m.conn, &[1.0, 0.0], None, None, None).unwrap();
+        let r = search_by_embedding(&m.conn, &[1.0, 0.0], None, None, None, None).unwrap();
         assert_eq!(
             r.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
             vec![ids[0].as_str(), ids[1].as_str()],
             "0.0 similarity is below 0.3"
         );
         let eligible: HashSet<String> = [ids[1].clone()].into();
-        let r =
-            search_by_embedding(&m.conn, &[1.0, 0.0], None, Some(0.0), Some(&eligible)).unwrap();
+        let r = search_by_embedding(&m.conn, &[1.0, 0.0], None, Some(0.0), Some(&eligible), None)
+            .unwrap();
         assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn superseded_rows_are_excluded_before_truncation() {
+        let m = Memory::open_in_memory().unwrap();
+        let ids: Vec<String> = (0..3)
+            .map(|i| {
+                insert_thought(
+                    &m.conn,
+                    &ThoughtInput {
+                        content: format!("t{i}"),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+        store_embedding(&m.conn, &ids[0], &[1.0, 0.0]).unwrap();
+        store_embedding(&m.conn, &ids[1], &[1.0, 0.0]).unwrap();
+        store_embedding(&m.conn, &ids[2], &[0.8, 0.6]).unwrap();
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                params![ids[2], ids[0]],
+            )
+            .unwrap();
+        m.conn
+            .execute(
+                "INSERT INTO edges (id, source_id, target_id, edge_type, created_at, valid_from) VALUES ('e', ?1, ?2, 'refuted_by', 'x', '2026-01-01T00:00:00Z')",
+                params![ids[1], ids[2]],
+            )
+            .unwrap();
+        let now = "2026-11-02T00:00:00.000Z";
+        let r = search_by_embedding(&m.conn, &[1.0, 0.0], Some(1), None, None, Some(now)).unwrap();
+        assert_eq!(r.iter().map(|x| &x.id).collect::<Vec<_>>(), vec![&ids[2]]);
+        let before_edge = "2025-12-31T00:00:00.000Z";
+        let r = search_by_embedding(&m.conn, &[1.0, 0.0], Some(3), None, None, Some(before_edge))
+            .unwrap();
+        assert_eq!(r.len(), 2, "a future refutation is not active yet");
+        let r = search_by_embedding(&m.conn, &[1.0, 0.0], Some(3), None, None, None).unwrap();
+        assert_eq!(r.len(), 3);
     }
 }

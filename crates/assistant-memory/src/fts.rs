@@ -44,6 +44,8 @@ pub struct SearchOptions {
     pub include_shared: bool,
     pub shared_only: bool,
     pub topic: Option<String>,
+    /// Exclude rows superseded as of this RFC3339 instant; `None` keeps them.
+    pub exclude_superseded_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -102,6 +104,15 @@ pub(crate) fn search_thoughts_bounded(
             .into(),
         );
         vals.push(Value::Text(pid.clone()));
+    }
+    if let Some(now) = &o.exclude_superseded_at {
+        crate::temporal::ensure_sql_function(conn)?;
+        // Positional binding: the predicate's single `@edge_now` becomes this `?`.
+        wheres.push(format!(
+            "NOT {}",
+            crate::brief::superseded_sql().replace("@edge_now", "?")
+        ));
+        vals.push(Value::Text(now.clone()));
     }
     let where_sql = wheres.join(" AND ");
     let total_count: i64 = conn.query_row(
@@ -241,5 +252,66 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.total_count, 0);
+    }
+
+    #[test]
+    fn superseded_rows_are_excluded_before_count_rank_and_limit() {
+        let m = Memory::open_in_memory().unwrap();
+        let mk = |content: &str| {
+            insert_thought(
+                &m.conn,
+                &ThoughtInput {
+                    content: content.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let current = mk("osprey current note among other words");
+        let consolidated = mk("osprey osprey osprey osprey");
+        let refuted = mk("osprey osprey osprey");
+        let claim_scoped = mk("osprey osprey claim scoped");
+        m.conn
+            .execute(
+                "UPDATE thoughts SET consolidated_into = ?1 WHERE id = ?2",
+                rusqlite::params![current, consolidated],
+            )
+            .unwrap();
+        for (i, (source, metadata)) in [
+            (&refuted, None),
+            (&claim_scoped, Some(r#"{"claim":"old port"}"#)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            m.conn
+                .execute(
+                    "INSERT INTO edges (id, source_id, target_id, edge_type, metadata, created_at) VALUES (?1, ?2, ?3, 'refuted_by', ?4, 'x')",
+                    rusqlite::params![format!("e{i}"), source, current, metadata],
+                )
+                .unwrap();
+        }
+        let search = |exclude: Option<&str>| {
+            search_thoughts(
+                &m.conn,
+                &SearchOptions {
+                    query: "osprey".into(),
+                    limit: Some(1),
+                    exclude_superseded_at: exclude.map(str::to_owned),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let r = search(Some("2026-11-02T00:00:00.000Z"));
+        assert_eq!(r.total_count, 2);
+        assert_eq!(
+            r.results[0].id, claim_scoped,
+            "claim-scoped refutation keeps the row"
+        );
+        assert!(r.has_more);
+        let r = search(None);
+        assert_eq!(r.total_count, 4);
+        assert_eq!(r.results[0].id, consolidated);
     }
 }

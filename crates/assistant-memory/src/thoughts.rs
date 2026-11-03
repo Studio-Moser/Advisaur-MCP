@@ -349,6 +349,10 @@ pub fn update_thought(conn: &Connection, id: &str, u: &ThoughtUpdate) -> Result<
     if sets.is_empty() {
         return Ok(false);
     }
+    // Vectors are caller-supplied, so supplied text (even unchanged) invalidates the stored one.
+    if u.content.is_some() || u.summary.is_some() {
+        sets.push("embedding = NULL");
+    }
     sets.push("updated_at = ?");
     vals.push(Value::Text(now_iso()));
     vals.push(Value::Text(id.to_string()));
@@ -547,6 +551,54 @@ mod tests {
         assert!(t.last_confirmed_at.is_some());
         assert!(delete_thought(&m.conn, &id).unwrap());
         assert!(!delete_thought(&m.conn, &id).unwrap());
+    }
+
+    #[test]
+    fn text_updates_clear_embedding_metadata_updates_keep_it() {
+        use crate::vectors::{get_embedding, store_embedding};
+        let m = Memory::open_in_memory().unwrap();
+        let text_edits = [
+            ThoughtUpdate {
+                content: Some("new content".into()),
+                ..Default::default()
+            },
+            ThoughtUpdate {
+                summary: Some("new summary".into()),
+                ..Default::default()
+            },
+            ThoughtUpdate {
+                content: Some("new content".into()),
+                summary: Some("new summary".into()),
+                ..Default::default()
+            },
+            // Unchanged text still invalidates: the caller supplied text.
+            ThoughtUpdate {
+                content: Some("a b c".into()),
+                ..Default::default()
+            },
+        ];
+        for update in text_edits {
+            let id = insert_thought(&m.conn, &input("a b c")).unwrap();
+            store_embedding(&m.conn, &id, &[1.0, 0.0]).unwrap();
+            assert!(update_thought(&m.conn, &id, &update).unwrap());
+            assert_eq!(get_embedding(&m.conn, &id).unwrap(), None, "{update:?}");
+        }
+        let id = insert_thought(&m.conn, &input("a b c")).unwrap();
+        store_embedding(&m.conn, &id, &[1.0, 0.0]).unwrap();
+        assert!(
+            update_thought(
+                &m.conn,
+                &id,
+                &ThoughtUpdate {
+                    topics: Some(vec!["t".into()]),
+                    trust_level: Some(TrustLevel::Unverified),
+                    metadata: Some(Map::new()),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+        );
+        assert_eq!(get_embedding(&m.conn, &id).unwrap(), Some(vec![1.0, 0.0]));
     }
 
     #[test]

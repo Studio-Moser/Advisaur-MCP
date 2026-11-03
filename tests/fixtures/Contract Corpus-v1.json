@@ -247,7 +247,7 @@
       "handler": "search_thoughts",
       "arguments": {"query": "benchmark", "project_identifier": "shelby", "limit": 10},
       "expected": {
-        "ranked_ids": ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000006"],
+        "ranked_ids": ["00000000-0000-4000-8000-000000000001"],
         "forbidden_ids": ["00000000-0000-4000-8000-000000000002"],
         "json_values": {"/mode": "fts"}
       }
