@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use thiserror::Error;
 
+use crate::candidate_pool::{CLASSES, CandidatePoolReport};
 use crate::comparison::ComparisonReport;
 use crate::manifest::ResultManifest;
 
@@ -104,4 +105,155 @@ pub fn render_comparison_report(comparison: &ComparisonReport) -> String {
         }
     }
     report
+}
+
+pub fn render_candidate_pool_report(report: &CandidatePoolReport) -> String {
+    let parity = &report.override_parity;
+    let mut out = format!(
+        "# Hybrid Candidate-Pool Benchmark\n\n\
+         Code: `{}`  \nFixture: `{}` ({}), SHA-256 `{}`  \n\
+         Documents: {}; vectors: {} ({} dimensions)  \n\
+         Metric version: `{}`; limits: {}; offsets: {}  \nPools per source: {}  \n\
+         Override path given the production pool vs default path: {}/{} identical  \n\
+         Deterministic digest: `{}`  \nRun: {} on {}, {} ms\n",
+        report.code_sha,
+        report.fixture.source,
+        report.fixture.suite_version,
+        report.fixture.sha256,
+        report.fixture.documents,
+        report.fixture.vectors,
+        report.fixture.embedding_dimensions,
+        report
+            .configuration
+            .get("metric_version")
+            .map_or("", String::as_str),
+        report
+            .configuration
+            .get("limits")
+            .map_or("", String::as_str),
+        report
+            .configuration
+            .get("offsets")
+            .map_or("", String::as_str),
+        report.configuration.get("pools").map_or("", String::as_str),
+        parity.identical,
+        parity.checked,
+        report.deterministic_digest,
+        report.runtime.generated_at,
+        report.runtime.target,
+        report.runtime.duration_ms,
+    );
+    for mismatch in &parity.mismatches {
+        let _ = writeln!(out, "- override/default mismatch: {mismatch}");
+    }
+
+    for class in CLASSES {
+        let _ = write!(
+            out,
+            "\n## Mean first-page metrics: {class} cases\n\n\
+             Deltas are against `current` at the same limit. Median time is per handler call.\n\n\
+             | Limit | Policy | Pool/source | Cases | Mean fused total | Recall@5 | Recall@10 | NDCG@5 | NDCG@10 | \
+             ΔRecall@5 | ΔRecall@10 | ΔNDCG@5 | ΔNDCG@10 | Median µs |\n\
+             | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        );
+        for aggregate in report.aggregates.iter().filter(|a| a.class == class) {
+            let mut durations: Vec<u64> = report
+                .observations
+                .iter()
+                .filter(|o| {
+                    o.class == class
+                        && o.limit == aggregate.limit
+                        && o.policy == aggregate.policy
+                        && o.offset == 0
+                })
+                .filter_map(|o| {
+                    report
+                        .runtime
+                        .observation_duration_us
+                        .get(&CandidatePoolReport::runtime_key(o))
+                        .copied()
+                })
+                .collect();
+            durations.sort_unstable();
+            let median = durations.get(durations.len() / 2).copied().unwrap_or(0);
+            let (m, d) = (&aggregate.mean, &aggregate.delta_vs_current);
+            let _ = writeln!(
+                out,
+                "| {} | {} | {} | {} | {:.1} | {:.4} | {:.4} | {:.4} | {:.4} | {:+.4} | {:+.4} | {:+.4} | {:+.4} | {} |",
+                aggregate.limit,
+                aggregate.policy,
+                aggregate.pool_per_source,
+                aggregate.cases,
+                aggregate.mean_fused_total,
+                m.recall_at_5,
+                m.recall_at_10,
+                m.ndcg_at_5,
+                m.ndcg_at_10,
+                d.recall_at_5,
+                d.recall_at_10,
+                d.ndcg_at_5,
+                d.ndcg_at_10,
+                median,
+            );
+        }
+    }
+
+    out.push_str(
+        "\n## First page per case\n\n\
+         Page ranks are positions on the first page; fused ranks are positions in the whole \
+         fused pool. `-` means not returned or not admitted.\n\n\
+         | Case | Class | Limit | Policy | Page ranks | Fused ranks | Recall@10 | NDCG@10 | Fused total | Corpus |\n\
+         | --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: |\n",
+    );
+    for o in report.observations.iter().filter(|o| o.offset == 0) {
+        let format_ranks = |ranks: &[crate::manifest::RelevantRank]| {
+            ranks
+                .iter()
+                .map(|r| format!("{}:{}", r.id, r.rank.map_or("-".into(), |r| r.to_string())))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let ranks = format_ranks(&o.relevant_ranks);
+        let fused = format_ranks(&o.relevant_fused_ranks);
+        let metrics = o.metrics.unwrap_or(crate::candidate_pool::PoolMetrics {
+            recall_at_5: 0.0,
+            recall_at_10: 0.0,
+            ndcg_at_5: 0.0,
+            ndcg_at_10: 0.0,
+        });
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {ranks} | {fused} | {:.4} | {:.4} | {} | {} |",
+            o.case_id,
+            o.class,
+            o.limit,
+            o.policy,
+            metrics.recall_at_10,
+            metrics.ndcg_at_10,
+            o.total_count,
+            o.corpus_size,
+        );
+    }
+
+    out.push_str(
+        "\n## Pagination\n\n\
+         `total_count` is the filtered fused pool, not the corpus or the full match set.\n\n\
+         | Case | Limit | Policy | Offset | Page size | total_count | has_more | Corpus |\n\
+         | --- | ---: | --- | ---: | ---: | ---: | --- | ---: |\n",
+    );
+    for o in &report.observations {
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {} | {} | {} | {} |",
+            o.case_id,
+            o.limit,
+            o.policy,
+            o.offset,
+            o.page_ids.len(),
+            o.total_count,
+            o.has_more,
+            o.corpus_size,
+        );
+    }
+    out
 }

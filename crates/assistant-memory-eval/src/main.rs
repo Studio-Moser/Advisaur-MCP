@@ -9,24 +9,30 @@ use std::time::Instant;
 
 use assistant_memory::brief::BRIEF_POLICY_VERSION;
 use assistant_memory::migrations::CURRENT_SCHEMA_VERSION;
+use assistant_memory_eval::candidate_pool::run_candidate_pool_experiment;
 use assistant_memory_eval::comparison::{compare, load_policy};
 use assistant_memory_eval::contract::run_contract_suite;
 use assistant_memory_eval::fetch::fetch_dataset;
 use assistant_memory_eval::longmemeval::{load_manifest, run_longmemeval_suite};
 use assistant_memory_eval::manifest::{DatasetProvenance, ResultManifest};
-use assistant_memory_eval::report::{render_comparison_report, render_run_report};
+use assistant_memory_eval::report::{
+    render_candidate_pool_report, render_comparison_report, render_run_report,
+};
 use assistant_memory_eval::runner::{RunMetadata, build_result_manifest};
 use chrono::{SecondsFormat, Utc};
 use sha2::{Digest, Sha256};
 
 const CONTRACT_FIXTURE: &str = include_str!("../../../tests/fixtures/Contract Corpus-v1.json");
 const PUBLIC_MANIFEST: &str = include_str!("../../../tests/fixtures/LongMemEval PR-v1.json");
+const CANDIDATE_POOL_FIXTURE: &str =
+    include_str!("../../../tests/fixtures/Candidate Pool Corpus-v1.json");
 const DEFAULT_POLICY: &str = include_str!("../../../tests/fixtures/Memory Eval Policy-v1.json");
 const USAGE: &str = "Deterministic memory evaluation\n\n\
 Usage:\n\
   assistant-memory-eval fetch longmemeval-pr --cache PATH\n\
   assistant-memory-eval run --suite pr --dataset PATH --output DIR [--policy PATH] [--code-sha SHA]\n\
-  assistant-memory-eval compare --base PATH --candidate PATH --candidate-repeat PATH --output DIR [--policy PATH]\n";
+  assistant-memory-eval compare --base PATH --candidate PATH --candidate-repeat PATH --output DIR [--policy PATH]\n\
+  assistant-memory-eval pool-benchmark --output DIR [--code-sha SHA]\n";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -49,6 +55,7 @@ fn execute(args: &[String]) -> Result<bool, Box<dyn Error>> {
         Some("fetch") => fetch_command(&args[1..]),
         Some("run") => run_command(&args[1..]),
         Some("compare") => compare_command(&args[1..]),
+        Some("pool-benchmark") => pool_benchmark_command(&args[1..]),
         Some(command) => {
             Err(input_error(format!("unknown command `{command}`; see --help")).into())
         }
@@ -167,11 +174,7 @@ fn run_command(args: &[String]) -> Result<bool, Box<dyn Error>> {
         public,
         provenance,
         RunMetadata {
-            code_sha: options
-                .get("--code-sha")
-                .cloned()
-                .or_else(|| std::env::var("GITHUB_SHA").ok())
-                .unwrap_or_else(|| "unknown".into()),
+            code_sha: code_sha(&options),
             policy_version: policy.policy_version,
             generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
             duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -211,6 +214,28 @@ fn compare_command(args: &[String]) -> Result<bool, Box<dyn Error>> {
     )?;
     println!("wrote comparison artifacts: {}", output_path.display());
     Ok(comparison.passed)
+}
+
+fn pool_benchmark_command(args: &[String]) -> Result<bool, Box<dyn Error>> {
+    let options = parse_options(args, &["--output", "--code-sha"])?;
+    let output_path = required_path(&options, "--output")?;
+    let report = run_candidate_pool_experiment(CANDIDATE_POOL_FIXTURE, code_sha(&options))?;
+    fs::create_dir_all(&output_path)?;
+    write_pretty_json(&output_path.join("results.json"), &report)?;
+    fs::write(
+        output_path.join("report.md"),
+        render_candidate_pool_report(&report),
+    )?;
+    println!("wrote candidate-pool artifacts: {}", output_path.display());
+    Ok(report.override_parity.identical == report.override_parity.checked)
+}
+
+fn code_sha(options: &BTreeMap<String, String>) -> String {
+    options
+        .get("--code-sha")
+        .cloned()
+        .or_else(|| std::env::var("GITHUB_SHA").ok())
+        .unwrap_or_else(|| "unknown".into())
 }
 
 fn parse_options(args: &[String], allowed: &[&str]) -> Result<BTreeMap<String, String>, io::Error> {

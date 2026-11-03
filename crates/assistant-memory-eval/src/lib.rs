@@ -1,3 +1,4 @@
+pub mod candidate_pool;
 pub mod comparison;
 pub mod contract;
 pub mod fetch;

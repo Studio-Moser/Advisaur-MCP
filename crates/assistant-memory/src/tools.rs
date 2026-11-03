@@ -14,7 +14,7 @@ use crate::edges::{
     EdgeInput, expire_edge, fetch_graph_related, link_thoughts, traverse_graph, unlink_thoughts,
 };
 use crate::error::Error;
-use crate::fts::{SearchOptions, search_thoughts};
+use crate::fts::{SearchOptions, search_thoughts_bounded};
 use crate::limits::*;
 use crate::reconcile::{Decision, can_reconcile, find_candidates, reconcile, tokenize};
 use crate::resolve::{
@@ -27,7 +27,7 @@ use crate::thoughts::{
 };
 use crate::topics::{canonicalize_topic, canonicalize_topics};
 use crate::trust::{fence_record_text, fence_summaries, fence_text};
-use crate::vectors::search_by_embedding;
+use crate::vectors::{search_by_embedding, search_by_embedding_bounded};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolResult {
@@ -791,6 +791,18 @@ fn graph_related_json(m: &Memory, ids: &[String], depth: i64) -> crate::Result<V
 }
 
 pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
+    search_thoughts_with_hybrid_pool(m, args, None)
+}
+
+/// `search_thoughts_tool` with an experiment-only per-source hybrid candidate pool.
+/// `None` keeps the production pool of `min(limit * 3, 100)`. Only the candidate-pool
+/// evaluator passes a pool; it is not an MCP parameter.
+#[doc(hidden)]
+pub fn search_thoughts_with_hybrid_pool(
+    m: &Memory,
+    args: &Value,
+    hybrid_pool: Option<i64>,
+) -> ToolResult {
     let a: SearchArgs = match parse_args(args) {
         Ok(a) => a,
         Err(e) => return e,
@@ -979,7 +991,7 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
     }
 
     let fts = |lim: i64, off: i64| {
-        search_thoughts(
+        search_thoughts_bounded(
             &m.conn,
             &SearchOptions {
                 query: a.query.clone().unwrap_or_default(),
@@ -993,6 +1005,7 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
                 topic: a.topic.clone(),
                 exclude_superseded_at: exclude_superseded_at.clone(),
             },
+            lim,
         )
     };
 
@@ -1016,13 +1029,13 @@ pub fn search_thoughts_tool(m: &Memory, args: &Value) -> ToolResult {
 
     // hybrid: RRF with K = 60 over pools of min(limit*3, 100)
     let embedding = a.embedding.as_ref().unwrap();
-    let pool = (limit * 3).min(100);
+    let pool = hybrid_pool.unwrap_or((limit * 3).min(100)).max(1);
     let fts_r = try_tool!(fts(pool, 0));
     let eligible = try_tool!(eligible_ids(true));
-    let vec_r = try_tool!(search_by_embedding(
+    let vec_r = try_tool!(search_by_embedding_bounded(
         &m.conn,
         embedding,
-        Some(pool),
+        pool as usize,
         None,
         eligible.as_ref(),
         exclude_superseded_at.as_deref()

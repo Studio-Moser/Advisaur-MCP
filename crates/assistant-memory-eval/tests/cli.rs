@@ -100,6 +100,7 @@ fn help_documents_the_offline_fetch_run_compare_workflow() {
     assert!(stdout.contains("fetch longmemeval-pr"));
     assert!(stdout.contains("run --suite pr"));
     assert!(stdout.contains("compare --base"));
+    assert!(stdout.contains("pool-benchmark --output"));
 }
 
 #[test]
@@ -172,6 +173,32 @@ fn run_with_a_missing_cache_fails_offline_without_creating_dataset_data() {
         String::from_utf8(output.stderr)
             .unwrap()
             .contains("No such file")
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn candidate_pool_command_writes_results_and_report() {
+    let directory = std::env::temp_dir().join(format!("assistant-eval-pool-{}", Uuid::new_v4()));
+    let status = Command::new(env!("CARGO_BIN_EXE_assistant-memory-eval"))
+        .args([
+            "pool-benchmark",
+            "--output",
+            directory.to_str().unwrap(),
+            "--code-sha",
+            "cli-sha",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    let results: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("results.json")).unwrap()).unwrap();
+    assert_eq!(results["code_sha"], "cli-sha");
+    assert!(
+        fs::read_to_string(directory.join("report.md"))
+            .unwrap()
+            .contains("Code: `cli-sha`")
     );
     fs::remove_dir_all(directory).unwrap();
 }

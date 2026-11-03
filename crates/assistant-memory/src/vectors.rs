@@ -76,7 +76,26 @@ pub fn search_by_embedding(
     eligible: Option<&HashSet<String>>,
     exclude_superseded_at: Option<&str>,
 ) -> Result<Vec<VectorSearchResult>> {
-    let limit = limit.unwrap_or(20).clamp(1, 100) as usize;
+    search_by_embedding_bounded(
+        conn,
+        query,
+        limit.unwrap_or(20).clamp(1, 100) as usize,
+        threshold,
+        eligible,
+        exclude_superseded_at,
+    )
+}
+
+/// `search_by_embedding` with a limit the caller has already bounded; see
+/// `fts::search_thoughts_bounded`.
+pub(crate) fn search_by_embedding_bounded(
+    conn: &Connection,
+    query: &[f32],
+    limit: usize,
+    threshold: Option<f32>,
+    eligible: Option<&HashSet<String>>,
+    exclude_superseded_at: Option<&str>,
+) -> Result<Vec<VectorSearchResult>> {
     let threshold = threshold.unwrap_or(DEFAULT_THRESHOLD);
     let mut sql = "SELECT t.id, t.summary, t.type, t.topics, t.created_at, t.embedding FROM thoughts t WHERE t.embedding IS NOT NULL".to_string();
     let mut params: Vec<(&str, &dyn rusqlite::ToSql)> = Vec::new();
